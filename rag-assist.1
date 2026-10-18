@@ -1,0 +1,152 @@
+.TH RAG\-ASSIST 1 "2026-10-18" "termux-rag-assist 1.0.0" "User Commands"
+.SH NAME
+rag\-assist \- coding assistant for Termux with local\-project RAG
+.SH SYNOPSIS
+.B rag\-assist
+[\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR]
+.SH DESCRIPTION
+.B rag\-assist
+indexes a local project into SQLite FTS5, retrieves the most relevant code
+snippets for each question, and answers through either an external LLM API or a
+local llama.cpp model. It is designed for ARM64 Android devices running Termux.
+.PP
+All state is kept under
+.IR ~/.rag\-assist/ ,
+or the directory named by
+.BR RAG_ASSIST_HOME .
+.SH COMMANDS
+.TP
+.B chat [\fIMESSAGE\fR] [options]
+Start an interactive chat session, or answer a single message and exit.
+Inside a session,
+.BR /exit ,
+.BR /quit ,
+.BR /clear ,
+and
+.B /help
+are recognised, and Ctrl+D ends the session. End a line with
+.B \\\\
+to continue a multi\-line block terminated by a blank line.
+.br
+Options:
+.BR \-p ", " \-\-project " \fIPATH\fR"
+.B \-\-no\-rag
+skip retrieval;
+.B \-\-stream
+stream the API response;
+.B \-\-index " / " \-\-no\-index
+control automatic indexing.
+.TP
+.B index [\fIPATH\fR] [options]
+Scan a project directory and write the chunks to the FTS5 index. The path
+becomes
+.BR default_project_path .
+Options:
+.B \-\-force
+re\-index regardless of mtime,
+.B \-\-json
+emit statistics as JSON,
+.B \-\-set\-default
+keep the existing default project path.
+.TP
+.B config \fISUBCOMMAND\fR
+.TQ
+.B config show [\-\-reveal]
+Print the active configuration.
+.B \-\-reveal
+decrypts the API key; treat the output as sensitive.
+.TQ
+.B config set \fIKEY\fR [\fIVALUE\fR] [\-\-secret]
+Set a value. Credential fields are stored encrypted.
+.B \-\-secret
+without a value prompts without echoing. Special keys:
+.B provider
+(accepts
+.IR external ", " local ", " openai ", " groq ),
+and
+.BR api_key .
+.TQ
+.B config path
+Print the resolved path of every state file.
+.TP
+.B update [\fB\-\-check\fR] [\fB\-\-force\fR] [\fB\-\-no\-install\fR] [\fB\-\-yes\fR]
+Update a source checkout to the latest release and re\-run the installer.
+Config, credentials and the index in ~/.rag\-assist are never touched.
+An installation made from a package manager cannot self\-update; the command
+reports that and points at \fBpkg upgrade\fR. A checkout whose \fBorigin\fR is not
+\fBgithub.com/PADZ\-PRD/RAG\-termux\-cli\fR is refused. A dirty tree or a diverged
+branch stops the update unless \fB\-\-force\fR is given.
+.TP
+.B status
+Report the provider, the index size, and a connectivity check.
+.TP
+.B doctor
+Run installation and security self\-checks. Exits non\-zero if any fail.
+.SH OPTIONS
+.TP
+.BR \-v ", " \-\-verbose
+Enable debug logging.
+.TP
+.BR \-h ", " \-\-help
+Show help. Help text includes usage examples.
+.TP
+.BR \-V ", " \-\-version
+Show the version.
+.TP
+.B \-\-no\-colour
+Disable ANSI colours. Also honours
+.BR NO_COLOR .
+.SH ENVIRONMENT
+.TP
+.B RAG_ASSIST_HOME
+Override the state directory. Default
+.IR ~/.rag\-assist .
+.TP
+.B NO_COLOR
+When set, disables all ANSI colour output.
+.SH FILES
+.TP
+.I ~/.rag\-assist/config.yaml
+Configuration. API keys appear only as
+.B keystore://
+references.
+.TP
+.I ~/.rag\-assist/keystore.bin
+AES\-256\-GCM sealed credentials.
+.TP
+.I ~/.rag\-assist/index.db
+SQLite FTS5 project index. Mode 0600.
+.TP
+.I ~/.rag\-assist/logs/app.log
+Operational log. Metadata only, mode 0600, rotated at 10 MB keeping 5 archives.
+.TP
+.I ~/.rag\-assist/logs/audit.log
+Audit trail for configuration changes and index operations.
+.SH SECURITY
+API keys are encrypted with AES\-256\-GCM and never written to
+.I config.yaml
+or to any log. Log entries record timestamps, levels, event names, and a
+SHA\-256 fingerprint of queries rather than query text or code. User input is
+never passed through a shell, and control markers found in indexed files are
+neutralised before they can reach a prompt.
+.SH EXAMPLES
+.TP
+.B rag\-assist index ~/projects/my\-app
+Index a project directory.
+.TP
+.B rag\-assist chat
+Start an interactive session.
+.TP
+.B rag\-assist chat "explain this traceback"
+Answer a single question.
+.TP
+.B rag\-assist config set provider local
+Switch to the offline llama.cpp path.
+.TP
+.B rag\-assist doctor
+Verify the installation.
+.SH SEE ALSO
+.BR llama (1),
+.BR termux\-info (1)
+.SH BUGS
+Report issues at https://github.com/PADZ-PRD/RAG\-termux\-cli/issues

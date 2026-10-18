@@ -1,0 +1,10 @@
+# SHA-256 manifest for files installed by install.sh (SEC-05 / AC-26).
+#
+# Verify with:  sha256sum -c checksums.sha256
+#
+# install.sh is deliberately NOT listed. It is the file being executed, so
+# hashing it here would make every edit to the installer invalidate its own
+# manifest. Shipped native binaries (for example a prebuilt llama-cli) MUST be
+# listed here, and their hashes updated whenever the release binary changes.
+#
+f7ed024723b3b4100fc75791ea78ac3d90907c52c04391105849071f27703edf  rag-assist.1

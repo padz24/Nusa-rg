@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Never commit real credentials or local state
+*.db
+*.db-wal
+*.db-shm
+keystore.bin
+master.key
+config.yaml
+logs/
+
+# Models and llama.cpp builds
+*.gguf
+llama.cpp/

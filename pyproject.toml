@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "termux-rag-assist"
+version = "1.0.0"
+description = "Coding assistant CLI for Termux with local-project RAG over SQLite FTS5"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "PADZ-PRD" }]
+keywords = ["termux", "rag", "llm", "cli", "android", "sqlite-fts5"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Android",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "click>=8.0",
+    "PyYAML>=6.0",
+    "requests>=2.25",
+    "cryptography>=3.4",
+    "markdown2>=2.4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+rag-assist = "ragassist.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ragassist*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
