@@ -11,16 +11,16 @@ import stat
 
 import pytest
 
-from ragassist.config import Config
-from ragassist.llm import build_client
-from ragassist.llm.api_client import ApiClient
-from ragassist.llm.base import (
+from nusa_rg.config import Config
+from nusa_rg.llm import build_client
+from nusa_rg.llm.api_client import ApiClient
+from nusa_rg.llm.base import (
     AuthenticationError,
     LocalModelError,
     ProviderUnavailableError,
     RateLimitError,
 )
-from ragassist.llm.local import LocalLLMRunner, estimate_tokens
+from nusa_rg.llm.local import LocalLLMRunner, estimate_tokens
 
 
 class FakeResponse:
@@ -107,20 +107,20 @@ def test_status_reads_requests_attribute():
 
     Reading only ``.status`` made every HTTP error look like a 200.
     """
-    from ragassist.llm.api_client import ApiClient as C
+    from nusa_rg.llm.api_client import ApiClient as C
 
     assert C._status(FakeResponse(status=401)) == 401
     assert C._status(FakeResponse(status=404)) == 404
 
 
 def test_status_reads_urllib_attribute():
-    from ragassist.llm.api_client import ApiClient as C
+    from nusa_rg.llm.api_client import ApiClient as C
 
     assert C._status(FakeUrllibResponse(status=500)) == 500
 
 
 def test_status_defaults_to_zero_for_unknown_objects():
-    from ragassist.llm.api_client import ApiClient as C
+    from nusa_rg.llm.api_client import ApiClient as C
 
     assert C._status(object()) == 0
 
@@ -214,7 +214,7 @@ def test_html_error_body_still_raises_on_status():
 
 
 def test_body_text_handles_both_transports():
-    from ragassist.llm.api_client import ApiClient as C
+    from nusa_rg.llm.api_client import ApiClient as C
 
     assert C._body_text(FakeRequestsResponse(payload={"a": 1})) == '{"a": 1}'
     assert C._body_text(FakeUrllibResponse(payload={"b": 2})) == '{"b": 2}'
@@ -538,7 +538,7 @@ def test_factory_builds_local_client(fake_llama, fake_model):
 
 def test_factory_requires_key_for_external_mode():
     """FR-08/AC-10: no request is attempted without a credential."""
-    from ragassist.llm.base import AuthenticationError
+    from nusa_rg.llm.base import AuthenticationError
 
     settings = Config()
     settings.update({"model_provider": "external", "api_key": ""})
@@ -548,7 +548,7 @@ def test_factory_requires_key_for_external_mode():
 
 
 def test_local_without_model_path_is_actionable():
-    from ragassist.llm.base import LLMError
+    from nusa_rg.llm.base import LLMError
 
     settings = Config()
     settings.set_provider("local")
@@ -568,7 +568,7 @@ def test_config_provider_base_url_switching():
 
 def test_engine_ask_does_not_touch_rag_when_llm_swapped(monkeypatch, sample_project):
     """AC-27: swapping the LLM client leaves retrieval untouched."""
-    from ragassist.engine import CoreEngine
+    from nusa_rg.engine import CoreEngine
 
     engine = CoreEngine()
     engine.index_project(sample_project)
@@ -578,7 +578,7 @@ def test_engine_ask_does_not_touch_rag_when_llm_swapped(monkeypatch, sample_proj
     engine2.index_project(sample_project)
     calls = []
     monkeypatch.setattr(
-        "ragassist.llm.build_client",
+        "nusa_rg.llm.build_client",
         lambda cfg: type("Stub", (), {
             "name": "stub",
             "generate": lambda self, p, **kw: calls.append(p) or type(

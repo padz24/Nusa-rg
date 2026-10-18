@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from ragassist import command
+from nusa_rg import command
 
 
 # ------------------------------------------------------------------- parsing

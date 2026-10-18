@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ragassist import update
+from nusa_rg import update
 
 
 # ------------------------------------------------------------------ helpers
@@ -26,7 +26,7 @@ def run_git(*args, cwd=None):
 def isolated_state(tmp_path, monkeypatch):
     """Keep audit logs and state out of the real home directory."""
     state = tmp_path / "state"
-    monkeypatch.setenv("RAG_ASSIST_HOME", str(state))
+    monkeypatch.setenv("NUSA_RG_HOME", str(state))
     return state
 
 
@@ -45,8 +45,8 @@ def checkout(tmp_path):
     run_git("clone", "-q", str(origin), str(work))
     run_git("checkout", "-q", "-b", "main", cwd=work)
 
-    (work / "ragassist").mkdir()
-    (work / "ragassist" / "__init__.py").write_text(
+    (work / "nusa_rg").mkdir()
+    (work / "nusa_rg" / "__init__.py").write_text(
         '__version__ = "1.0.0"\n', encoding="utf-8")
     (work / "install.sh").write_text('#!/bin/bash\necho INSTALLER\n',
                                      encoding="utf-8")
@@ -80,7 +80,7 @@ def publish(origin, work, version: str):
     shutil.rmtree(publisher, ignore_errors=True)
     run_git("clone", "-q", str(origin), str(publisher))
     run_git("checkout", "-q", "main", cwd=publisher)
-    (publisher / "ragassist" / "__init__.py").write_text(
+    (publisher / "nusa_rg" / "__init__.py").write_text(
         f'__version__ = "{version}"\n', encoding="utf-8")
     run_git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-aqm",
             f"release {version}", cwd=publisher)
@@ -162,7 +162,7 @@ def test_local_remote_expands_a_tilde(tmp_path, monkeypatch):
 
 
 def test_expected_remote_defaults_to_github_and_follows_config(monkeypatch):
-    from ragassist import config as config_module
+    from nusa_rg import config as config_module
 
     monkeypatch.setattr(config_module.Config, "get",
                         lambda self, key, default=None: default)
@@ -178,7 +178,7 @@ def test_expected_remote_defaults_to_github_and_follows_config(monkeypatch):
 
 def test_a_broken_config_cannot_open_the_guard(monkeypatch):
     """A config that explodes must fall back to the default, not to 'allow'."""
-    from ragassist import config as config_module
+    from nusa_rg import config as config_module
 
     def explode(self, key, default=None):
         raise RuntimeError("corrupt config")
@@ -214,7 +214,7 @@ def test_the_refusal_names_the_configured_remote(checkout, monkeypatch):
     """With an offline mirror set, blaming GitHub would point at the wrong repo."""
     run_git("remote", "set-url", "origin", "https://github.com/other/x.git",
             cwd=checkout.work)
-    from ragassist import config as config_module
+    from nusa_rg import config as config_module
 
     monkeypatch.setattr(
         config_module.Config, "get",
@@ -237,7 +237,7 @@ def test_foreign_repository_is_refused(tmp_path):
     run_git("remote", "add", "origin",
             "https://github.com/someone/else.git", cwd=other)
 
-    source = update.find_source_dir(other / "ragassist")
+    source = update.find_source_dir(other / "nusa_rg")
     assert source == other
     # The guard is what decides; check it directly for a foreign remote.
     assert update._is_expected_remote(update._remote_url(source)) is False
@@ -300,7 +300,7 @@ def test_perform_fast_forwards_and_runs_installer(checkout):
     assert result.changed is True
     assert result.new_version == "1.1.0"
     assert "ran install.sh" in result.steps
-    assert "1.1.0" in (checkout.work / "ragassist" / "__init__.py").read_text()
+    assert "1.1.0" in (checkout.work / "nusa_rg" / "__init__.py").read_text()
 
 
 def test_perform_reports_no_change_when_current(checkout):
@@ -314,7 +314,7 @@ def test_perform_reports_no_change_when_current(checkout):
 
 
 def test_perform_refuses_a_dirty_tree(checkout):
-    (checkout.work / "ragassist" / "__init__.py").write_text(
+    (checkout.work / "nusa_rg" / "__init__.py").write_text(
         '__version__ = "1.0.0"\n# local edit\n', encoding="utf-8")
     info = update.UpdateInfo(installed_version="1.0.0",
                              method=update.METHOD_SOURCE,
@@ -390,7 +390,7 @@ def _run_cli(args, cwd):
     """Run the CLI from this source tree, with cwd elsewhere."""
     env = dict(os.environ, PYTHONPATH=str(SOURCE_ROOT))
     return subprocess.run(
-        [sys.executable, "-m", "ragassist", *args],
+        [sys.executable, "-m", "nusa_rg", *args],
         cwd=str(cwd), capture_output=True, text=True, env=env, check=False,
     )
 

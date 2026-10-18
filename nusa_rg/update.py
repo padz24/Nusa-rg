@@ -12,7 +12,7 @@ Three things make this more than "run git pull":
 * **It must fail loudly.** No network, a dirty tree, a detached checkout or a
   missing interpreter each produce a specific message rather than a traceback.
 
-Configuration lives in ``~/.rag-assist``, not in the checkout, so updating never
+Configuration lives in ``~/.nusa-rg``, not in the checkout, so updating never
 touches credentials or the index.
 """
 
@@ -82,7 +82,7 @@ class UpdateInfo:
                     f"{self.remote_version} ({state})")
         if self.method == METHOD_PACKAGE:
             return ("installed from a package manager; "
-                    "run: pkg upgrade termux-rag-assist")
+                    "run: pkg upgrade termux-nusa-rg")
         return self.detail or "install method could not be determined"
 
 
@@ -158,7 +158,7 @@ def expected_remote() -> str:
     """The remote this installation is allowed to update from.
 
     Defaults to :data:`GITHUB_REPO`. A local or offline remote is only honoured
-    when the user names it with ``rag-assist config set update_remote <path>``:
+    when the user names it with ``nusa-rg config set update_remote <path>``:
     an update runs ``git reset --hard``, so the target has to be something the
     user chose, never merely whatever ``origin`` happens to point at.
     """
@@ -333,7 +333,7 @@ def _package_installed() -> bool:
     if not executable:
         return False
     code, out, _ = _run([executable, "list-installed"], timeout=60)
-    return code == 0 and "termux-rag-assist" in out
+    return code == 0 and "termux-nusa-rg" in out
 
 
 def shutil_which(name: str) -> str | None:
@@ -404,10 +404,10 @@ def perform(info: UpdateInfo, *, force: bool = False,
             return result
         # Point the installer at the tree we just updated. It also works this
         # out on its own, but saying so explicitly keeps the two from drifting.
-        env = {"RAG_ASSIST_REPO_DIR": str(source_dir)}
+        env = {"NUSA_RG_REPO_DIR": str(source_dir)}
         if shutil.which("llama-cli") is None:
             # Never let an optional, multi-minute build block an update.
-            env["RAG_ASSIST_SKIP_LLAMA"] = "1"
+            env["NUSA_RG_SKIP_LLAMA"] = "1"
         code, out, err = _run(["bash", str(script)], cwd=source_dir,
                               timeout=DEFAULT_TIMEOUT, env=env)
         if code != 0:
@@ -443,7 +443,7 @@ def _readable_git_error(prefix: str, raw: str, hint: str | None = None) -> str:
 
 def _version_from_checkout(source_dir: Path) -> str:
     """Read __version__ from the updated source without importing it."""
-    version_file = source_dir / "ragassist" / "__init__.py"
+    version_file = source_dir / "nusa_rg" / "__init__.py"
     try:
         text = version_file.read_text(encoding="utf-8")
     except OSError:

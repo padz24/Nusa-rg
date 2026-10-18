@@ -92,16 +92,16 @@ def configure(verbose: bool = False, force: bool = False) -> logging.Logger:
     """Install the rotating file handler and the stderr console handler.
 
     Re-runs automatically when the state directory changes (e.g. a new
-    ``RAG_ASSIST_HOME``) so handlers never point at a stale location.
+    ``NUSA_RG_HOME``) so handlers never point at a stale location.
     """
     global _configured, _configured_root
     root = str(paths.base_dir())
     with _lock:
         if _configured and not force and _configured_root == root:
-            return logging.getLogger("ragassist")
+            return logging.getLogger("nusa_rg")
 
         paths.ensure_dirs()
-        logger = logging.getLogger("ragassist")
+        logger = logging.getLogger("nusa_rg")
         logger.setLevel(logging.DEBUG if verbose else logging.INFO)
         logger.propagate = False
 
@@ -138,7 +138,7 @@ def get_logger(name: str | None = None) -> logging.Logger:
     # Reconfigure when unconfigured *or* when the state directory has moved.
     if not _configured or _configured_root != str(paths.base_dir()):
         configure()
-    return logging.getLogger(f"ragassist.{name}" if name else "ragassist")
+    return logging.getLogger(f"nusa_rg.{name}" if name else "nusa_rg")
 
 
 def _render_field(name: str, value: Any) -> str:
@@ -180,7 +180,7 @@ def audit(event: str, result: str = "SUCCESS", detail: str = "") -> None:
     operational log, while sharing the same masking rules and ISO-8601 stamps.
     """
     paths.ensure_dirs()
-    logger = logging.getLogger("ragassist.audit")
+    logger = logging.getLogger("nusa_rg.audit")
     target = str(paths.audit_log_path())
     current = {
         os.path.abspath(handler.baseFilename)

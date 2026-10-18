@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the bundled provider catalogue.
 
-Maintainers run this to refresh ``ragassist/data/catalog.json.gz``:
+Maintainers run this to refresh ``nusa_rg/data/catalog.json.gz``:
 
     python scripts/build_catalog.py                    # fetch models.dev
     python scripts/build_catalog.py raw-api.json       # or a downloaded copy
@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ragassist.catalog import BUNDLED_PATH, CATALOG_URL, fetch_raw, trim_catalog  # noqa: E402
+from nusa_rg.catalog import BUNDLED_PATH, CATALOG_URL, fetch_raw, trim_catalog  # noqa: E402
 
 
 def read_source(source: str) -> dict:

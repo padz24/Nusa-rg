@@ -11,9 +11,9 @@ import stat
 
 import pytest
 
-from ragassist import crypto, paths, sanitize
-from ragassist.config import Config, ConfigError
-from ragassist.logging_setup import MAX_BYTES, fingerprint, log_event, mask
+from nusa_rg import crypto, paths, sanitize
+from nusa_rg.config import Config, ConfigError
+from nusa_rg.logging_setup import MAX_BYTES, fingerprint, log_event, mask
 
 
 # ------------------------------------------------------------------- keystore
@@ -164,7 +164,7 @@ def test_unknown_provider_rejected():
 def test_numeric_values_coerced(isolated_home):
     from click.testing import CliRunner
 
-    from ragassist.cli import main
+    from nusa_rg.cli import main
 
     runner = CliRunner()
     result = runner.invoke(main, ["config", "set", "chunk_lines", "80"])
@@ -263,7 +263,7 @@ def test_audit_log_masks_secret_values(isolated_home):
 
 
 def test_audit_log_records_index_operations(isolated_home, sample_project):
-    from ragassist.engine import CoreEngine
+    from nusa_rg.engine import CoreEngine
 
     engine = CoreEngine()
     engine.index_project(sample_project)
@@ -343,13 +343,13 @@ def test_state_directory_layout(isolated_home):
 
 def test_env_override_redirects_state(tmp_path, monkeypatch):
     target = tmp_path / "elsewhere"
-    monkeypatch.setenv("RAG_ASSIST_HOME", str(target))
+    monkeypatch.setenv("NUSA_RG_HOME", str(target))
     assert paths.base_dir() == target
 
 
 def test_index_not_world_readable(isolated_home, sample_project):
     """SEC-04."""
-    from ragassist.rag import ProjectIndex
+    from nusa_rg.rag import ProjectIndex
 
     with ProjectIndex() as index:
         index.index(sample_project)

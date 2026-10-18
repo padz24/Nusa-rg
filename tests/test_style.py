@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-from ragassist import style
-from ragassist.cli import main
-from ragassist.config import Config, ConfigError
-from ragassist.engine import CoreEngine
-from ragassist.llm.base import LLMResponse, Usage
-from ragassist.rag.composer import COMMAND_OPEN, compose
+from nusa_rg import style
+from nusa_rg.cli import main
+from nusa_rg.config import Config, ConfigError
+from nusa_rg.engine import CoreEngine
+from nusa_rg.llm.base import LLMResponse, Usage
+from nusa_rg.rag.composer import COMMAND_OPEN, compose
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ class _StubClient:
 @pytest.fixture
 def captured_engine(monkeypatch):
     stub = _StubClient()
-    monkeypatch.setattr("ragassist.llm.build_client", lambda cfg: stub)
+    monkeypatch.setattr("nusa_rg.llm.build_client", lambda cfg: stub)
     engine = CoreEngine()
     engine.ask("warm up", skip_retrieval=True)
     return stub, engine

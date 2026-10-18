@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from ragassist.rag import ProjectIndex, chunk_lines, compose, retrieve, scan
-from ragassist.rag.index import _fts_query_escape
+from nusa_rg.rag import ProjectIndex, chunk_lines, compose, retrieve, scan
+from nusa_rg.rag.index import _fts_query_escape
 
 
 # ------------------------------------------------------------------- scanner
@@ -107,7 +107,7 @@ def test_index_survives_reopen(sample_project, tmp_path):
 
 
 def test_index_file_permissions_are_owner_only(tmp_path):
-    from ragassist import paths
+    from nusa_rg import paths
 
     db = tmp_path / "perm.db"
     with ProjectIndex(db) as index:
@@ -178,7 +178,7 @@ def test_compose_without_context(indexed):
 
 
 def test_compose_strips_injected_role_markers():
-    from ragassist import sanitize
+    from nusa_rg import sanitize
 
     prompt = compose(
         "normal question",

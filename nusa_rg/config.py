@@ -24,7 +24,7 @@ from .logging_setup import audit
 #: Fields whose values must be stored as keystore references (SEC-01, AC-31).
 CREDENTIAL_FIELDS = ("api_key",)
 
-#: Accepted values for ``response_style``; see :mod:`ragassist.style`.
+#: Accepted values for ``response_style``; see :mod:`nusa_rg.style`.
 RESPONSE_STYLES = ("default", "caveman")
 
 DEFAULTS: dict[str, Any] = {
@@ -65,7 +65,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 #: Built-in aliases kept for compatibility and for installs whose catalogue
-#: file is missing. The catalogue in :mod:`ragassist.catalog` covers the rest.
+#: file is missing. The catalogue in :mod:`nusa_rg.catalog` covers the rest.
 PROVIDERS = {
     "openai": "https://api.openai.com/v1",
     "groq": "https://api.groq.com/openai/v1",
@@ -88,7 +88,7 @@ def _reject_plaintext(config: dict[str, Any]) -> None:
         if isinstance(value, str) and value and not crypto.is_reference(value):
             raise ConfigError(
                 f"config.yaml field '{field}' holds a plaintext value. "
-                "Run 'rag-assist config set api_key --secret' so the credential "
+                "Run 'nusa-rg config set api_key --secret' so the credential "
                 "is stored encrypted in the keystore."
             )
     per_provider = config.get("provider_keys")
@@ -97,7 +97,7 @@ def _reject_plaintext(config: dict[str, Any]) -> None:
             if isinstance(value, str) and value and not crypto.is_reference(value):
                 raise ConfigError(
                     f"config.yaml field 'provider_keys.{provider}' holds a "
-                    "plaintext value. Run 'rag-assist config set api_key "
+                    "plaintext value. Run 'nusa-rg config set api_key "
                     f"--provider {provider} --secret' instead."
                 )
 
@@ -122,7 +122,7 @@ def default_document() -> dict[str, Any]:
 
 
 class Config:
-    """Read/write access to ``~/.rag-assist/config.yaml``."""
+    """Read/write access to ``~/.nusa-rg/config.yaml``."""
 
     def __init__(self, path=None):
         self._path = path or paths.config_path()
@@ -272,7 +272,7 @@ class Config:
             if not provider.selectable:
                 raise ConfigError(
                     f"provider '{name}' is listed but does not expose an "
-                    "OpenAI-compatible endpoint. rag-assist sends "
+                    "OpenAI-compatible endpoint. nusa-rg sends "
                     "/chat/completions requests; if your gateway offers one, "
                     "point 'config set api_base_url' at it directly."
                 )
@@ -305,7 +305,7 @@ class Config:
 
         raise ConfigError(
             f"unknown provider '{name}'. Search the catalogue with: "
-            f"rag-assist providers list --search {name}"
+            f"nusa-rg providers list --search {name}"
         )
 
     def api_key_for(self, provider_id: str = "") -> str:

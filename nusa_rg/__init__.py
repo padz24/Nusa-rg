@@ -1,7 +1,7 @@
-"""Termux RAG Assistant - a coding assistant with local-project retrieval.
+"""NUSA-RG - a coding assistant with local-project retrieval.
 
 Public surface:
-    ``from ragassist import CoreEngine, Config, ProjectIndex``
+    ``from nusa_rg import CoreEngine, Config, ProjectIndex``
 """
 
 __version__ = "1.3.0"
@@ -10,7 +10,7 @@ __all__ = ["CoreEngine", "Config", "ProjectIndex", "__version__"]
 
 
 def __getattr__(name: str):
-    # Lazy re-exports keep `import ragassist` cheap for `rag-assist --version`.
+    # Lazy re-exports keep `import nusa_rg` cheap for `nusa-rg --version`.
     if name == "CoreEngine":
         from .engine import CoreEngine
 

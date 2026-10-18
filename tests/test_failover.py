@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from ragassist import catalog, llm
-from ragassist.config import Config
-from ragassist.llm.api_client import ApiClient
-from ragassist.llm.base import (
+from nusa_rg import catalog, llm
+from nusa_rg.config import Config
+from nusa_rg.llm.api_client import ApiClient
+from nusa_rg.llm.base import (
     LLMError,
     LLMResponse,
     ProviderUnavailableError,
     Usage,
 )
-from ragassist.llm.failover import FailoverClient
+from nusa_rg.llm.failover import FailoverClient
 
 
 class StubClient:
@@ -136,7 +136,7 @@ def test_factory_skips_keyless_local_fallback_never(monkeypatch, tmp_path):
     """A loopback fallback needs no key, and the entry's model is honoured."""
     import json
 
-    from ragassist import paths
+    from nusa_rg import paths
 
     paths.ensure_dirs()
     paths.catalog_path().write_text(json.dumps({

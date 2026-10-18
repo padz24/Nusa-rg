@@ -1,19 +1,19 @@
-.TH RAG\-ASSIST 1 "2026-10-18" "termux-rag-assist 1.3.0" "User Commands"
+.TH NUSA\-RG 1 "2026-10-18" "termux-nusa-rg 1.3.0" "User Commands"
 .SH NAME
-rag\-assist \- coding assistant for Termux with local\-project RAG
+nusa\-rg \- coding assistant for Termux with local\-project RAG
 .SH SYNOPSIS
-.B rag\-assist
+.B nusa\-rg
 [\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR]
 .SH DESCRIPTION
-.B rag\-assist
+.B nusa\-rg
 indexes a local project into SQLite FTS5, retrieves the most relevant code
 snippets for each question, and answers through either an external LLM API or a
 local llama.cpp model. It is designed for ARM64 Android devices running Termux.
 .PP
 All state is kept under
-.IR ~/.rag\-assist/ ,
+.IR ~/.nusa\-rg/ ,
 or the directory named by
-.BR RAG_ASSIST_HOME .
+.BR NUSA_RG_HOME .
 .SH COMMANDS
 .TP
 .B chat [\fIMESSAGE\fR] [options]
@@ -142,7 +142,7 @@ directory, replacing the bundled snapshot.
 .TP
 .B update [\fB\-\-check\fR] [\fB\-\-force\fR] [\fB\-\-no\-install\fR] [\fB\-\-yes\fR]
 Update a source checkout to the latest release and re\-run the installer.
-Config, credentials and the index in ~/.rag\-assist are never touched.
+Config, credentials and the index in ~/.nusa\-rg are never touched.
 An installation made from a package manager cannot self\-update; the command
 reports that and points at \fBpkg upgrade\fR. An update runs \fBgit reset \-\-hard\fR
 against \fBorigin\fR, so a checkout whose remote is not
@@ -177,9 +177,9 @@ Disable ANSI colours. Also honours
 .BR NO_COLOR .
 .SH ENVIRONMENT
 .TP
-.B RAG_ASSIST_HOME
+.B NUSA_RG_HOME
 Override the state directory. Default
-.IR ~/.rag\-assist .
+.IR ~/.nusa\-rg .
 .TP
 .B NO_COLOR
 When set, disables all ANSI colour output.
@@ -187,32 +187,32 @@ When set, disables all ANSI colour output.
 .B GROQ_API_KEY, OPENAI_API_KEY, ...
 Keys for catalogue providers are read from the environment variables models.dev
 lists (shown by
-.BR "rag\-assist providers show \fIPROVIDER\fR" ),
+.BR "nusa\-rg providers show \fIPROVIDER\fR" ),
 after the per\-provider keystore entry and before the shared
 .B api_key
 slot.
 .SH FILES
 .TP
-.I ~/.rag\-assist/config.yaml
+.I ~/.nusa\-rg/config.yaml
 Configuration. API keys appear only as
 .B keystore://
 references.
 .TP
-.I ~/.rag\-assist/keystore.bin
+.I ~/.nusa\-rg/keystore.bin
 AES\-256\-GCM sealed credentials.
 .TP
-.I ~/.rag\-assist/index.db
+.I ~/.nusa\-rg/index.db
 SQLite FTS5 project index. Mode 0600.
 .TP
-.I ~/.rag\-assist/catalog.json
+.I ~/.nusa\-rg/catalog.json
 Provider catalogue written by
-.BR "rag\-assist providers refresh" .
+.BR "nusa\-rg providers refresh" .
 Optional; when present it overrides the bundled snapshot. Mode 0600.
 .TP
-.I ~/.rag\-assist/logs/app.log
+.I ~/.nusa\-rg/logs/app.log
 Operational log. Metadata only, mode 0600, rotated at 10 MB keeping 5 archives.
 .TP
-.I ~/.rag\-assist/logs/audit.log
+.I ~/.nusa\-rg/logs/audit.log
 Audit trail for configuration changes and index operations.
 .SH SECURITY
 API keys are encrypted with AES\-256\-GCM and never written to
@@ -230,34 +230,34 @@ in indexed files or command output are neutralised before they can reach a
 prompt.
 .SH EXAMPLES
 .TP
-.B rag\-assist index ~/projects/my\-app
+.B nusa\-rg index ~/projects/my\-app
 Index a project directory.
 .TP
-.B rag\-assist chat
+.B nusa\-rg chat
 Start an interactive session.
 .TP
-.B rag\-assist chat "explain this traceback"
+.B nusa\-rg chat "explain this traceback"
 Answer a single question.
 .TP
-.B rag\-assist providers list
+.B nusa\-rg providers list
 Browse the bundled provider catalogue.
 .TP
-.B rag\-assist config set provider deepseek
+.B nusa\-rg config set provider deepseek
 Switch to a catalogue provider; its default model is applied too.
 .TP
-.B rag\-assist config set api_key \-\-provider groq \-\-secret
+.B nusa\-rg config set api_key \-\-provider groq \-\-secret
 Store a key for one provider.
 .TP
-.B rag\-assist run \-\-ask "what broke?" pytest \-x
+.B nusa\-rg run \-\-ask "what broke?" pytest \-x
 Run a command and ask about its output.
 .TP
-.B rag\-assist chat \-\-caveman
+.B nusa\-rg chat \-\-caveman
 Start a session that answers in telegraphic style to save output tokens.
 .TP
-.B rag\-assist config set provider local
+.B nusa\-rg config set provider local
 Switch to the offline llama.cpp path.
 .TP
-.B rag\-assist doctor
+.B nusa\-rg doctor
 Verify the installation.
 .SH SEE ALSO
 .BR llama (1),

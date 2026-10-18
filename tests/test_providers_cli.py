@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-from ragassist import catalog, paths
-from ragassist.cli import main
-from ragassist.config import Config, ConfigError
+from nusa_rg import catalog, paths
+from nusa_rg.cli import main
+from nusa_rg.config import Config, ConfigError
 
 
 @pytest.fixture
@@ -200,8 +200,8 @@ def test_chat_help_lists_new_commands(runner):
 
 
 def test_chat_caveman_flag_reaches_the_prompt(runner, monkeypatch):
-    from ragassist.llm.api_client import ApiClient
-    from ragassist.llm.base import LLMResponse, Usage
+    from nusa_rg.llm.api_client import ApiClient
+    from nusa_rg.llm.base import LLMResponse, Usage
 
     captured = {}
 
@@ -217,8 +217,8 @@ def test_chat_caveman_flag_reaches_the_prompt(runner, monkeypatch):
 
 
 def test_run_ask_uses_the_output_as_context(runner, monkeypatch):
-    from ragassist.llm.api_client import ApiClient
-    from ragassist.llm.base import LLMResponse, Usage
+    from nusa_rg.llm.api_client import ApiClient
+    from nusa_rg.llm.base import LLMResponse, Usage
 
     captured = {}
 

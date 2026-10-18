@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rag-assist installer for Termux (AC-01, AC-40).
+# nusa-rg installer for Termux (AC-01, AC-40).
 #
 # One-liner install:
 #   curl -fsSL https://raw.githubusercontent.com/PADZ-PRD/RAG-termux-cli/main/install.sh | bash
@@ -8,37 +8,37 @@
 # connection (AC-01).
 set -euo pipefail
 
-PACKAGE="termux-rag-assist"
+PACKAGE="termux-nusa-rg"
 MIN_TERMUX="0.118"
 
 # Where the source tree lives. Three ways to end up here, in order:
 #
-#   1. RAG_ASSIST_REPO_DIR -- an explicit override, always wins.
-#   2. This script's own directory, when it holds a checkout. `rag-assist
+#   1. NUSA_RG_REPO_DIR -- an explicit override, always wins.
+#   2. This script's own directory, when it holds a checkout. `nusa-rg
 #      update` re-runs this script from the tree it just updated, and so does
 #      anyone running `./install.sh` by hand. Without this, the script would
-#      clone a *second* copy into $HOME/rag-assist and install that instead,
+#      clone a *second* copy into $HOME/nusa-rg and install that instead,
 #      silently leaving the updated tree unused.
-#   3. $HOME/rag-assist -- the one-liner `curl ... | bash` path, which has no
+#   3. $HOME/nusa-rg -- the one-liner `curl ... | bash` path, which has no
 #      source tree of its own.
 #
 # Case 2 requires ${BASH_SOURCE[0]} to be a real file: under `curl | bash` it
 # is "bash", and mistaking the user's current directory for a checkout would
 # install whatever unrelated project they happened to be standing in.
 resolve_repo_dir() {
-  if [ -n "${RAG_ASSIST_REPO_DIR:-}" ]; then
-    REPO_DIR="$RAG_ASSIST_REPO_DIR"
+  if [ -n "${NUSA_RG_REPO_DIR:-}" ]; then
+    REPO_DIR="$NUSA_RG_REPO_DIR"
     return 0
   fi
   local self="${BASH_SOURCE[0]:-}"
   if [ -f "$self" ]; then
     local here; here="$(cd "$(dirname "$self")" && pwd)"
-    if [ -d "$here/ragassist" ] && [ -f "$here/pyproject.toml" ]; then
+    if [ -d "$here/nusa_rg" ] && [ -f "$here/pyproject.toml" ]; then
       REPO_DIR="$here"
       return 0
     fi
   fi
-  REPO_DIR="$HOME/rag-assist"
+  REPO_DIR="$HOME/nusa-rg"
 }
 
 REPO_DIR=""
@@ -124,10 +124,10 @@ install_deps() {
     die "could not install: ${failed[*]}
   On Termux, install the prebuilt packages instead:
       pkg install python-yaml python-cryptography
-  rag-assist will not run with an unencrypted keystore, so this is required."
+  nusa-rg will not run with an unencrypted keystore, so this is required."
   fi
 
-  log "installing the rag-assist package"
+  log "installing the nusa-rg package"
   python -m pip install --quiet --no-deps -e "$REPO_DIR" \
     || die "pip install of the application package failed"
 
@@ -135,7 +135,7 @@ install_deps() {
 }
 
 fetch_source() {
-  if [ -d "$REPO_DIR/ragassist" ]; then
+  if [ -d "$REPO_DIR/nusa_rg" ]; then
     ok "using existing source tree at $REPO_DIR"
     return 0
   fi
@@ -147,13 +147,13 @@ fetch_source() {
 
 install_llama_cpp() {
   # Optional: the local execution path needs an ARM64 llama.cpp build (MS-02).
-  if [ "${RAG_ASSIST_SKIP_LLAMA:-0}" = "1" ]; then
-    warn "skipping llama.cpp build (RAG_ASSIST_SKIP_LLAMA=1)"
+  if [ "${NUSA_RG_SKIP_LLAMA:-0}" = "1" ]; then
+    warn "skipping llama.cpp build (NUSA_RG_SKIP_LLAMA=1)"
     return 0
   fi
   command -v llama-cli >/dev/null 2>&1 && { ok "llama-cli already installed"; return 0; }
 
-  log "building llama.cpp (this is the slow step; set RAG_ASSIST_SKIP_LLAMA=1 to skip)"
+  log "building llama.cpp (this is the slow step; set NUSA_RG_SKIP_LLAMA=1 to skip)"
   local dir="$HOME/llama.cpp"
   git clone --depth 1 https://github.com/ggerganov/llama.cpp "$dir" || {
     warn "llama.cpp clone failed; external API mode still works"
@@ -190,7 +190,7 @@ main() {
 
   # Test/debug seam: print the source directory this invocation would install,
   # then return before anything is downloaded or modified.
-  if [ "${RAG_ASSIST_PRINT_REPO_DIR:-0}" = "1" ]; then
+  if [ "${NUSA_RG_PRINT_REPO_DIR:-0}" = "1" ]; then
     printf '%s\n' "$REPO_DIR"
     return 0
   fi
@@ -204,24 +204,24 @@ main() {
   install_llama_cpp
 
   log "securing the state directory"
-  mkdir -p "$HOME/.rag-assist/logs"
-  chmod 700 "$HOME/.rag-assist" "$HOME/.rag-assist/logs"
+  mkdir -p "$HOME/.nusa-rg/logs"
+  chmod 700 "$HOME/.nusa-rg" "$HOME/.nusa-rg/logs"
 
-  command -v rag-assist >/dev/null 2>&1 \
-    || warn "'rag-assist' is not on PATH; add \$HOME/.local/bin to PATH"
+  command -v nusa-rg >/dev/null 2>&1 \
+    || warn "'nusa-rg' is not on PATH; add \$HOME/.local/bin to PATH"
 
   echo
   ok "$PACKAGE installed"
   cat <<'NEXT'
 
 Next steps:
-  1. Store a provider key:   rag-assist config set api_key --secret
-  2. Index your project:     rag-assist index ~/projects/my-app
-  3. Start chatting:         rag-assist chat
-  4. Verify the install:     rag-assist doctor
+  1. Store a provider key:   nusa-rg config set api_key --secret
+  2. Index your project:     nusa-rg index ~/projects/my-app
+  3. Start chatting:         nusa-rg chat
+  4. Verify the install:     nusa-rg doctor
 
 Optional:
-  - Browse the provider catalogue:  rag-assist providers list
+  - Browse the provider catalogue:  nusa-rg providers list
   - Trim command output with rtk:   https://github.com/rtk-ai/rtk
 NEXT
 }

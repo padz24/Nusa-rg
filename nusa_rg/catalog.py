@@ -2,12 +2,12 @@
 
 The catalogue is a trimmed snapshot of `models.dev <https://models.dev>`_, the
 community registry that lists every provider, its base URL, the environment
-variable its key belongs in, and its models. ``rag-assist`` bundles a snapshot
-so this works offline, and ``rag-assist providers refresh`` replaces it with a
+variable its key belongs in, and its models. ``nusa-rg`` bundles a snapshot
+so this works offline, and ``nusa-rg providers refresh`` replaces it with a
 fresh copy on disk when a network is available.
 
 Only providers that speak the OpenAI chat-completions protocol -- the one
-protocol :class:`~ragassist.llm.api_client.ApiClient` implements -- can be sent
+protocol :class:`~nusa_rg.llm.api_client.ApiClient` implements -- can be sent
 a request; the rest are still listed and marked, because their key names and
 docs are useful when wiring a manual ``api_base_url``.
 """
@@ -279,7 +279,7 @@ def _read_document(path: Path) -> dict:
     except FileNotFoundError as exc:
         raise CatalogError(
             f"provider catalogue not found at {path}. Reinstall the package, "
-            "or run 'rag-assist providers refresh' once a network is available."
+            "or run 'nusa-rg providers refresh' once a network is available."
         ) from exc
     except (OSError, ValueError) as exc:
         raise CatalogError(f"cannot read the provider catalogue at {path}: {exc}") from exc
@@ -320,7 +320,7 @@ def fetch_raw(url: str = CATALOG_URL, timeout: int = 45) -> dict:
     from . import __version__
 
     request = urllib.request.Request(
-        url, headers={"User-Agent": f"rag-assist/{__version__} (Termux)"}
+        url, headers={"User-Agent": f"nusa-rg/{__version__} (Termux)"}
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:

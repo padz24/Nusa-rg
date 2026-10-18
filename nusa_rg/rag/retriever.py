@@ -1,6 +1,6 @@
 """Stage 3: turn a user query into ranked snippets (FR-10, AC-13).
 
-Wraps :class:`~ragassist.rag.index.ProjectIndex` with timing instrumentation
+Wraps :class:`~nusa_rg.rag.index.ProjectIndex` with timing instrumentation
 so the CLI can report the sub-2-second retrieval budget from NFR-02.
 """
 

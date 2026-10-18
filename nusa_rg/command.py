@@ -12,7 +12,7 @@ Two layers of compression, on purpose:
 Nothing here ever goes through a shell: the command line is split with
 ``shlex`` and executed as an argument list (SEC-02). Shell operators are
 rejected with an explanation instead of being silently reinterpreted, which
-also keeps ``rag-assist run`` predictable next to a real terminal.
+also keeps ``nusa-rg run`` predictable next to a real terminal.
 """
 
 from __future__ import annotations
@@ -154,7 +154,7 @@ def run(
     except subprocess.TimeoutExpired as exc:
         raise CommandError(
             f"the command did not finish within {timeout}s. "
-            "Raise it with: rag-assist config set command_timeout <seconds>"
+            "Raise it with: nusa-rg config set command_timeout <seconds>"
         ) from exc
     except FileNotFoundError as exc:
         raise CommandError(f"command not found: {argv[0]}") from exc

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from ragassist import catalog, paths
+from nusa_rg import catalog, paths
 
 SYNTHETIC = {
     "groq": {
@@ -169,7 +169,7 @@ def test_refresh_writes_private_state(monkeypatch):
 
 def test_refresh_rejects_an_empty_document(monkeypatch):
     monkeypatch.setattr(catalog, "fetch_raw", lambda url, timeout=45: {})
-    from ragassist.catalog import CatalogError
+    from nusa_rg.catalog import CatalogError
 
     with pytest.raises(CatalogError):
         catalog.refresh()

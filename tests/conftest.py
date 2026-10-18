@@ -11,10 +11,10 @@ os.environ.setdefault("NO_COLOR", "1")
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
-    """Point RAG_ASSIST_HOME at a tmp dir so tests never touch ~/.rag-assist."""
+    """Point NUSA_RG_HOME at a tmp dir so tests never touch ~/.nusa-rg."""
     state = tmp_path / "state"
     state.mkdir()
-    monkeypatch.setenv("RAG_ASSIST_HOME", str(state))
+    monkeypatch.setenv("NUSA_RG_HOME", str(state))
     monkeypatch.setenv("NO_COLOR", "1")
     yield state
 
@@ -62,7 +62,7 @@ def sample_project(tmp_path):
 @pytest.fixture
 def indexed(sample_project):
     """A ProjectIndex with sample_project already indexed."""
-    from ragassist.rag import ProjectIndex
+    from nusa_rg.rag import ProjectIndex
 
     with ProjectIndex() as index:
         index.index(

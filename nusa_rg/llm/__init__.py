@@ -4,7 +4,7 @@ The client is rebuilt from ``config.yaml`` every turn, so switching between
 ``external`` and ``local`` takes effect immediately (AC-30, FR-11/AC-15).
 
 When ``fallback_providers`` names one or more catalogue entries, the primary
-client is wrapped in a :class:`~ragassist.llm.failover.FailoverClient` that
+client is wrapped in a :class:`~nusa_rg.llm.failover.FailoverClient` that
 tries them in order: a rate-limited or unreachable provider no longer ends the
 session when a working alternative is configured.
 """
@@ -50,7 +50,7 @@ def _build_primary(config: Config, provider: str) -> tuple[str, LLMClient]:
         if not model_path:
             raise LLMError(
                 "model_provider is 'local' but local_model_path is empty. Set it "
-                "with: rag-assist config set local_model_path /path/to/model.gguf"
+                "with: nusa-rg config set local_model_path /path/to/model.gguf"
             )
         return "local", LocalLLMRunner(
             model_path=model_path,
@@ -72,11 +72,11 @@ def _build_primary(config: Config, provider: str) -> tuple[str, LLMClient]:
             names = ", ".join(_provider_env_names(provider_id)) or "its environment variable"
             raise AuthenticationError(
                 f"no API key for provider '{provider_id}'. Store one with:\n"
-                f"  rag-assist config set api_key --provider {provider_id} --secret\n"
+                f"  nusa-rg config set api_key --provider {provider_id} --secret\n"
                 f"or export {names}"
             )
         raise AuthenticationError(
-            "no API key configured. Run: rag-assist config set api_key --secret"
+            "no API key configured. Run: nusa-rg config set api_key --secret"
         )
     return provider_id or "external-api", ApiClient(
         base_url=base_url,

@@ -62,7 +62,7 @@ class CoreEngine:
         target = root or self.config.project_path()
         if not target:
             raise ValueError(
-                "no project path given. Usage: rag-assist index /path/to/project"
+                "no project path given. Usage: nusa-rg index /path/to/project"
             )
         resolved = str(Path(target).expanduser().resolve())
 

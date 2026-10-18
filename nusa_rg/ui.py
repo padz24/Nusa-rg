@@ -42,7 +42,7 @@ def _supports_colour() -> bool:
     """Disable ANSI codes when output is piped or TERM is dumb."""
     if os.environ.get("NO_COLOR"):
         return False
-    if os.environ.get("RAG_ASSIST_FORCE_COLOR"):
+    if os.environ.get("NUSA_RG_FORCE_COLOR"):
         return True
     if not sys.stdout.isatty():
         return False
@@ -164,6 +164,77 @@ def thinking(message: str = "Thinking..."):
 
 def heading(text: str) -> None:
     print(paint(text, BOLD, CYAN))
+
+
+# ------------------------------------------------------------------- banner
+#: Emblem palette sampled from the logo description in BANNER.txt (hex in
+#: parentheses): the left stroke runs cyan to royal blue, the diagonal is
+#: electric blue, the right stroke is turquoise to mint, the star is gold,
+#: and the orbit arc fades cyan to mint. Navy marks the shadowed baseline.
+_GOLD = (248, 195, 92)        # #F8C35C
+_CYAN = (78, 197, 252)        # #4EC5FC
+_SKY = (47, 169, 240)         # cyan-blue gradient step
+_ELECTRIC = (31, 154, 238)    # #1F9AEE
+_ROYAL = (9, 74, 176)         # #094AB0
+_TURQUOISE = (55, 198, 198)   # #37C6C6
+_MINT = (64, 208, 192)        # #40D0C0
+_DEEP = (36, 110, 170)        # navy shadow on the right baseline
+
+#: A ribbon N with a small gold star above it and an orbit arc underneath.
+#: Each row is a tuple of (text, colour) segments; None leaves text plain.
+_EMBLEM = (
+    (("     ", None), ("✦", _GOLD)),
+    (("███╗", _CYAN), ("   ", None), ("██╗", _TURQUOISE)),
+    (("████╗", _SKY), ("  ", None), ("██║", _TURQUOISE)),
+    (("██╔", _ELECTRIC), ("██╗", _ELECTRIC), (" ", None), ("██║", _TURQUOISE)),
+    (("██║", _ROYAL), ("╚██╗", _ELECTRIC), ("██║", _MINT)),
+    (("██║ ", _ROYAL), ("╚", _ELECTRIC), ("████", _ELECTRIC), ("║", _MINT)),
+    (("╚═╝", _ROYAL), ("  ", None), ("╚═══╝", _DEEP)),
+    (("╰───", _CYAN), ("────", _TURQUOISE), ("──╯", _MINT)),
+)
+
+#: The same emblem in ASCII, for terminals that cannot show block glyphs.
+_EMBLEM_ASCII = (
+    (("    ", None), ("*", _GOLD)),
+    (("##", _CYAN), ("   ", None), ("##", _TURQUOISE)),
+    (("###", _SKY), ("  ", None), ("##", _TURQUOISE)),
+    (("##", _ELECTRIC), (" #", _ELECTRIC), (" ", None), ("##", _TURQUOISE)),
+    (("##", _ROYAL), ("  ", None), ("###", _MINT)),
+    (("##", _ROYAL), ("   ", None), ("##", _MINT)),
+    (("\\", _CYAN), ("-------", _TURQUOISE), ("/", _MINT)),
+)
+
+
+def _truecolour() -> bool:
+    """True when the terminal advertises 24-bit colour support."""
+    colourterm = os.environ.get("COLORTERM", "").lower()
+    term = os.environ.get("TERM", "").lower()
+    return colourterm in ("truecolor", "24bit") or "truecolor" in term
+
+
+def _foreground(rgb: tuple[int, int, int]) -> str:
+    """SGR code for ``rgb``: 24-bit where advertised, else the 256-colour cube."""
+    r, g, b = rgb
+    if _truecolour():
+        return f"\033[38;2;{r};{g};{b}m"
+    cube = 16 + 36 * round(r / 255 * 5) + 6 * round(g / 255 * 5) + round(b / 255 * 5)
+    return f"\033[38;5;{cube}m"
+
+
+def banner() -> None:
+    """Print the NUSA-RG emblem: a ribbon N with a small star above it.
+
+    Colours follow BANNER.txt (cyan-blue-turquoise gradient, gold star) and
+    are dropped when output is piped, NO_COLOR is set, or --no-colour is
+    given; block glyphs fall back to ASCII outside a UTF-8 terminal.
+    """
+    encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
+    rows = _EMBLEM if "utf" in encoding else _EMBLEM_ASCII
+    for row in rows:
+        print("  " + "".join(
+            paint(text, _foreground(colour)) if colour else text
+            for text, colour in row
+        ))
 
 
 def timestamp() -> str:

@@ -4,7 +4,7 @@ AGENS.md specifies ``termux-keystore`` / ``termux-crypto``. Those are not
 published Termux packages, so this module implements the same guarantee with a
 real primitive: a single ``keystore.bin`` whose secrets are sealed with
 AES-256-GCM. The 256-bit key is derived from a random per-install master key
-file with ``scrypt``; both files live inside ``~/.rag-assist`` with mode 600,
+file with ``scrypt``; both files live inside ``~/.nusa-rg`` with mode 600,
 inside the Android app sandbox.
 
 The contract that matters for the rest of the codebase is the one in AGENS.md
@@ -32,7 +32,7 @@ KEYSTORE_PREFIX = "keystore://"  # config.yaml stores only this reference form
 
 _MISSING_BACKEND = (
     "the 'cryptography' package is not installed, so credentials cannot be "
-    "encrypted. rag-assist refuses to store API keys in plaintext (SEC-01). "
+    "encrypted. nusa-rg refuses to store API keys in plaintext (SEC-01). "
     "Install it with: pkg install python-cryptography"
 )
 

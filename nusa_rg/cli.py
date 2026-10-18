@@ -1,6 +1,6 @@
 """Command-line interface (FR-05, FR-06, FR-13..FR-16).
 
-Entry point: ``rag-assist`` with sub-commands ``chat``, ``index``, ``config``,
+Entry point: ``nusa-rg`` with sub-commands ``chat``, ``index``, ``config``,
 plus ``status`` and ``doctor`` for diagnostics.
 """
 
@@ -29,23 +29,24 @@ CONTEXT_SETTINGS = {
 
 EPILOG = """
 Examples:
-  rag-assist index ~/projects/my-app       Index a project directory
-  rag-assist chat                          Start an interactive session
-  rag-assist chat "explain this traceback" One-shot question, then exit
-  rag-assist providers list --search qwen  Browse 200+ provider entries
-  rag-assist config set provider deepseek  Switch provider in one command
-  rag-assist run --ask "why?" pytest -x    Run a command, ask about its output
-  rag-assist config show                    Print the current configuration
-  rag-assist config set provider local      Switch to the llama.cpp path
-  rag-assist status                         Show index and provider state
+  nusa-rg index ~/projects/my-app       Index a project directory
+  nusa-rg chat                          Start an interactive session
+  nusa-rg chat "explain this traceback" One-shot question, then exit
+  nusa-rg providers list --search qwen  Browse 200+ provider entries
+  nusa-rg config set provider deepseek  Switch provider in one command
+  nusa-rg run --ask "why?" pytest -x    Run a command, ask about its output
+  nusa-rg config show                    Print the current configuration
+  nusa-rg config set provider local      Switch to the llama.cpp path
+  nusa-rg status                         Show index and provider state
 
 In chat, type /exit (or Ctrl+D) to quit, /clear to start a new topic,
 /caveman to toggle terse answers, and !command to run a terminal command.
 """
 
 
-@click.group(context_settings=CONTEXT_SETTINGS, epilog=EPILOG)
-@click.version_option(__version__, "-V", "--version", prog_name="rag-assist")
+@click.group(context_settings=CONTEXT_SETTINGS, epilog=EPILOG,
+             invoke_without_command=True)
+@click.version_option(__version__, "-V", "--version", prog_name="nusa-rg")
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging.")
 @click.option("--no-colour", "--no-color", is_flag=True, help="Disable ANSI colours.")
 @click.pass_context
@@ -54,14 +55,21 @@ def main(ctx: click.Context, verbose: bool, no_colour: bool) -> None:
 
     \b
     Environment:
-      RAG_ASSIST_HOME   Override the state directory (default ~/.rag-assist)
-      NO_COLOR          Set to disable ANSI colours
+      NUSA_RG_HOME   Override the state directory (default ~/.nusa-rg)
+      NO_COLOR       Set to disable ANSI colours
     """
     if no_colour:
         ui.set_colour(False)
     configure(verbose=verbose)
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+
+    if ctx.invoked_subcommand is None:
+        # Bare invocation: show the emblem above the command list. The exit
+        # code stays 2, as click used for a no-arguments group.
+        ui.banner()
+        click.echo(ctx.get_help())
+        ctx.exit(2)
 
 
 # --------------------------------------------------------------------- chat
@@ -99,7 +107,7 @@ def _run_update(force: bool = False) -> None:
     if info.method != update_mod.METHOD_SOURCE:
         ui.warn(info.summary())
         if info.method == update_mod.METHOD_PACKAGE:
-            ui.info("run: pkg upgrade termux-rag-assist")
+            ui.info("run: pkg upgrade termux-nusa-rg")
         return
 
     print(f"  installed  {info.installed_version}")
@@ -114,7 +122,7 @@ def _run_update(force: bool = False) -> None:
         return
     if info.dirty and not force:
         ui.error("the checkout has uncommitted changes; "
-                 "commit them, or run 'rag-assist update --force'")
+                 "commit them, or run 'nusa-rg update --force'")
         return
 
     ui.info("updating; this can take a few minutes ...")
@@ -132,7 +140,7 @@ def _run_update(force: bool = False) -> None:
         return
     ui.success(f"updated {result.old_version} -> {result.new_version}"
                if result.changed else "already at the latest commit")
-    ui.info("the running session continues; restart rag-assist to pick up "
+    ui.info("the running session continues; restart nusa-rg to pick up "
             "the new code")
 
 
@@ -233,7 +241,7 @@ def _print_retrieval(result) -> None:
 def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool,
                  plain: bool = False, markdown: bool = True,
                  style: str | None = None) -> None:
-    ui.heading(f"rag-assist {__version__}")
+    ui.heading(f"nusa-rg {__version__}")
     try:
         with ui.thinking():
             turn = engine.ask(message, stream=stream, skip_retrieval=no_rag,
@@ -308,7 +316,8 @@ def _toggle_style(settings: Config, command: str, current: str | None) -> str:
 def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       plain: bool = False, markdown: bool = True,
                       style: str | None = None) -> None:
-    ui.heading(f"rag-assist {__version__} - type /exit to quit, /help for commands")
+    ui.banner()
+    ui.heading(f"nusa-rg {__version__} - type /exit to quit, /help for commands")
     root = engine.config.project_path()
     provider = engine.config.get("model_provider", "external")
     ui.info(f"provider: {provider} | project: {root or '(none indexed)'}")
@@ -317,7 +326,7 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
         if files:
             ui.info(f"index: {files} file(s), {chunks} chunk(s)")
         elif not no_rag:
-            ui.info("index: empty - run 'rag-assist index <path>' "
+            ui.info("index: empty - run 'nusa-rg index <path>' "
                     "for context-aware answers")
     except Exception:  # noqa: BLE001 - a broken index must not block chat
         pass
@@ -411,9 +420,9 @@ def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
 
     \b
     Examples:
-      rag-assist run git status
-      rag-assist run --ask "what broke?" pytest -x
-      rag-assist run "git diff --stat"
+      nusa-rg run git status
+      nusa-rg run --ask "what broke?" pytest -x
+      nusa-rg run "git diff --stat"
 
     The exit code is the command's own, so it composes with scripts.
     """
@@ -555,24 +564,24 @@ def config_set(key: str | None, value: str | None, secret: bool,
 
     \b
     Examples:
-      rag-assist config set provider deepseek
-      rag-assist config set api_model deepseek-flash
-      rag-assist config set api_key --secret                    (default slot)
-      rag-assist config set api_key --provider groq --secret    (per provider)
-      rag-assist config set fallback_providers "groq, deepseek"
-      rag-assist config set response_style caveman
-      rag-assist config set system_prompt "You are terse."
+      nusa-rg config set provider deepseek
+      nusa-rg config set api_model deepseek-flash
+      nusa-rg config set api_key --secret                    (default slot)
+      nusa-rg config set api_key --provider groq --secret    (per provider)
+      nusa-rg config set fallback_providers "groq, deepseek"
+      nusa-rg config set response_style caveman
+      nusa-rg config set system_prompt "You are terse."
     """
     settings = Config()
 
     if key is None:
-        ui.error("missing KEY. Run 'rag-assist config set --help' for usage.")
+        ui.error("missing KEY. Run 'nusa-rg config set --help' for usage.")
         sys.exit(2)
 
     if key == "provider":
         if value is None:
             ui.error("provider requires a value: external, local, or any "
-                     "catalogue id (see 'rag-assist providers list')")
+                     "catalogue id (see 'nusa-rg providers list')")
             sys.exit(2)
         try:
             report = settings.set_provider(value)
@@ -584,10 +593,10 @@ def config_set(key: str | None, value: str | None, secret: bool,
                    (f" ({shown})" if shown != report["provider"] else ""))
         if report.get("model"):
             ui.info(f"model set to {report['model']} "
-                    f"(change it with: rag-assist config set api_model <id>)")
+                    f"(change it with: nusa-rg config set api_model <id>)")
         if report.get("model_count"):
             ui.info(f"{report['model_count']} model(s) in the catalogue; "
-                    f"browse with: rag-assist providers models {report['provider']}")
+                    f"browse with: nusa-rg providers models {report['provider']}")
         return
 
     if key == "api_key":
@@ -667,7 +676,7 @@ def _validate_fallbacks(value: str) -> None:
                 known = False
         if not known:
             ui.error(f"unknown provider '{provider_id}' in fallback_providers. "
-                     "Find ids with: rag-assist providers list --search <text>")
+                     "Find ids with: nusa-rg providers list --search <text>")
             sys.exit(2)
 
 
@@ -721,7 +730,7 @@ def providers_list(search: str, show_all: bool, limit: int) -> None:
     if len(rows) > limit:
         ui.info(f"... {len(rows) - limit} more; raise --limit or narrow --search")
     if not rows:
-        ui.info("no provider matches; try: rag-assist providers refresh")
+        ui.info("no provider matches; try: nusa-rg providers refresh")
 
 
 @providers.command("show")
@@ -732,7 +741,7 @@ def providers_show(provider_id: str) -> None:
     provider = catalogue.get(provider_id)
     if provider is None:
         ui.error(f"unknown provider '{provider_id}'. "
-                 "Try: rag-assist providers list --search <text>")
+                 "Try: nusa-rg providers list --search <text>")
         sys.exit(1)
     ui.heading(provider.name)
     print(f"  id          {provider.id}")
@@ -745,10 +754,10 @@ def providers_show(provider_id: str) -> None:
     ready = ui.paint("yes", ui.GREEN) if provider.selectable else ui.paint("no", ui.YELLOW)
     print(f"  compatible  {ready}")
     if not provider.selectable:
-        ui.warn("this endpoint is not OpenAI chat-completions; rag-assist "
+        ui.warn("this endpoint is not OpenAI chat-completions; nusa-rg "
                 "cannot call it directly")
     else:
-        ui.info(f"switch with: rag-assist config set provider {provider.id}")
+        ui.info(f"switch with: nusa-rg config set provider {provider.id}")
 
 
 @providers.command("models")
@@ -809,7 +818,7 @@ def update(check_only: bool, force: bool, no_install: bool, yes: bool) -> None:
     """Update a source checkout to the latest release.
 
     \b
-    Config, credentials and the index live in ~/.rag-assist and are never
+    Config, credentials and the index live in ~/.nusa-rg and are never
     touched. A checkout installed from a package manager cannot self-update;
     this command says so and points at `pkg upgrade`.
     """
@@ -818,7 +827,7 @@ def update(check_only: bool, force: bool, no_install: bool, yes: bool) -> None:
     if info.method != update_mod.METHOD_SOURCE:
         ui.warn(info.summary())
         if info.method == update_mod.METHOD_PACKAGE:
-            ui.info("run: pkg upgrade termux-rag-assist")
+            ui.info("run: pkg upgrade termux-nusa-rg")
         audit("update.check", "SKIPPED", f"method={info.method}")
         sys.exit(1 if check_only else 0)
 
@@ -842,7 +851,7 @@ def update(check_only: bool, force: bool, no_install: bool, yes: bool) -> None:
 
     if check_only:
         if info.available:
-            ui.info("an update is available; run: rag-assist update")
+            ui.info("an update is available; run: nusa-rg update")
         else:
             ui.success("already up to date")
         return

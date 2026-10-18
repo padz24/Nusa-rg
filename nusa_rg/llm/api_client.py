@@ -25,7 +25,7 @@ from .base import (
 def _requests():
     """Import ``requests`` on demand, or ``None`` when it is not installed.
 
-    Deferring the import keeps ``rag-assist --help`` and ``status`` fast;
+    Deferring the import keeps ``nusa-rg --help`` and ``status`` fast;
     ``requests`` plus urllib3 costs close to a second of startup on ARM64, and
     the urllib fallback below works without it.
     """
@@ -180,7 +180,7 @@ class ApiClient(LLMClient):
         if status in (401, 403):
             raise AuthenticationError(
                 "the provider rejected the API key (HTTP "
-                f"{status}). Set a valid key with: rag-assist config set api_key --secret"
+                f"{status}). Set a valid key with: nusa-rg config set api_key --secret"
             )
         if status == 404:
             # Providers overload 404 for both a wrong path and a missing model;
@@ -188,7 +188,7 @@ class ApiClient(LLMClient):
             if detail and "model" in detail.lower():
                 raise AuthenticationError(
                     f"the provider does not know this model (HTTP 404): {detail}. "
-                    f"Fix it with: rag-assist config set api_model <model>"
+                    f"Fix it with: nusa-rg config set api_model <model>"
                 )
             raise AuthenticationError(
                 f"endpoint not found (HTTP 404): {self.endpoint}. "
@@ -270,7 +270,7 @@ class ApiClient(LLMClient):
                 return (
                     "The model spent its whole token budget reasoning and "
                     "produced no answer. Raise the limit with:\n"
-                    "  rag-assist config set max_tokens 4096\n\n"
+                    "  nusa-rg config set max_tokens 4096\n\n"
                     f"Partial reasoning:\n{reasoning[:400]}"
                 )
             return reasoning
@@ -278,7 +278,7 @@ class ApiClient(LLMClient):
             return (
                 "The response was cut off before any answer was produced. "
                 "Increase max_tokens and try again:\n"
-                "  rag-assist config set max_tokens 4096"
+                "  nusa-rg config set max_tokens 4096"
             )
         return "The model returned an empty response."
 
@@ -300,7 +300,7 @@ class ApiClient(LLMClient):
         if not self.api_key:
             return False, (
                 "no API key configured. Run: "
-                "rag-assist config set api_key --secret"
+                "nusa-rg config set api_key --secret"
             )
         try:
             response = self._post(

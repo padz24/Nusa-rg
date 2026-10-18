@@ -1,4 +1,4 @@
-# Termux RAG Assistant
+# NUSA-RG
 
 A coding assistant that runs entirely in your Android terminal. It indexes your
 local project with SQLite FTS5, retrieves the most relevant code snippets for
@@ -40,54 +40,54 @@ project directly and grounds its answers in the actual source.
 Check your environment at any time:
 
 ```bash
-rag-assist doctor
+nusa-rg doctor
 ```
 
 ## Install
 
 ```bash
-git clone https://github.com/PADZ-PRD/RAG-termux-cli.git ~/rag-assist
-cd ~/rag-assist && ./install.sh
+git clone https://github.com/PADZ-PRD/RAG-termux-cli.git ~/nusa-rg
+cd ~/nusa-rg && ./install.sh
 ```
 
 Or, once published to a Termux repository:
 
 ```bash
-pkg install termux-rag-assist
+pkg install termux-nusa-rg
 ```
 
 ## Quick start
 
 ```bash
 # 1. Store a provider key (encrypted, never written to config.yaml)
-rag-assist config set api_key --secret
+nusa-rg config set api_key --secret
 
 # 2. Point it at a project
-rag-assist index ~/projects/my-app
+nusa-rg index ~/projects/my-app
 
 # 3. Ask questions
-rag-assist chat
-rag-assist chat "explain this traceback"     # one-shot
+nusa-rg chat
+nusa-rg chat "explain this traceback"     # one-shot
 ```
 
 ## Commands
 
 | Command | Purpose |
 | :-- | :-- |
-| `rag-assist chat` | Interactive session (`/exit`, `/clear`, `/caveman`, `!command`, `/help`) |
-| `rag-assist chat "msg"` | Single question, then exit |
-| `rag-assist run <cmd>` | Run a command (through rtk when installed); `--ask "…"` answers with its output as context |
-| `rag-assist index <path>` | Scan and index a project |
-| `rag-assist providers list` | Browse the bundled catalogue of 200+ providers |
-| `rag-assist providers show <id>` | Endpoint, key variable, and default model for one provider |
-| `rag-assist providers models <id>` | The models a provider hosts, newest first |
-| `rag-assist providers refresh` | Fetch a fresh catalogue from models.dev |
-| `rag-assist config show` | Print active configuration |
-| `rag-assist config set <key> <value>` | Change a setting (`--secret` for keys, `--provider <id>` for per-provider keys) |
-| `rag-assist config path` | Show where state files live |
-| `rag-assist status` | Provider, model, style, fallback chain, index state, connectivity |
-| `rag-assist update` | Update a source checkout to the latest release |
-| `rag-assist doctor` | Installation and security self-checks |
+| `nusa-rg chat` | Interactive session (`/exit`, `/clear`, `/caveman`, `!command`, `/help`) |
+| `nusa-rg chat "msg"` | Single question, then exit |
+| `nusa-rg run <cmd>` | Run a command (through rtk when installed); `--ask "…"` answers with its output as context |
+| `nusa-rg index <path>` | Scan and index a project |
+| `nusa-rg providers list` | Browse the bundled catalogue of 200+ providers |
+| `nusa-rg providers show <id>` | Endpoint, key variable, and default model for one provider |
+| `nusa-rg providers models <id>` | The models a provider hosts, newest first |
+| `nusa-rg providers refresh` | Fetch a fresh catalogue from models.dev |
+| `nusa-rg config show` | Print active configuration |
+| `nusa-rg config set <key> <value>` | Change a setting (`--secret` for keys, `--provider <id>` for per-provider keys) |
+| `nusa-rg config path` | Show where state files live |
+| `nusa-rg status` | Provider, model, style, fallback chain, index state, connectivity |
+| `nusa-rg update` | Update a source checkout to the latest release |
+| `nusa-rg doctor` | Installation and security self-checks |
 
 Useful flags: `--json` on `index`, `--no-rag` on `chat`, `--project/-p`,
 `--stream`, `--force` on `index`, `--reveal` on `config show`, `--caveman` on
@@ -95,17 +95,17 @@ Useful flags: `--json` on `index`, `--no-rag` on `chat`, `--project/-p`,
 
 ## Providers
 
-`rag-assist` bundles a catalogue of **232 providers and 8,600+ models**, a
+`nusa-rg` bundles a catalogue of **232 providers and 8,600+ models**, a
 trimmed snapshot of [models.dev](https://models.dev), so browsing works
 offline. 209 of those providers speak the OpenAI chat-completions protocol and
 are ready to use with nothing more than an API key.
 
 ```bash
-rag-assist providers list                      # ready-to-use providers
-rag-assist providers list --search deep            # filter by id or name
-rag-assist providers show deepseek             # endpoint, key variable, default model
-rag-assist providers models deepseek           # its models, newest first
-rag-assist providers refresh                   # replace the snapshot with a fresh copy
+nusa-rg providers list                      # ready-to-use providers
+nusa-rg providers list --search deep            # filter by id or name
+nusa-rg providers show deepseek             # endpoint, key variable, default model
+nusa-rg providers models deepseek           # its models, newest first
+nusa-rg providers refresh                   # replace the snapshot with a fresh copy
 ```
 
 Switching is a config change and takes effect on the next turn — no reinstall,
@@ -113,11 +113,11 @@ no terminal restart. Setting a provider also picks its default model, which
 `config set api_model` can override.
 
 ```bash
-rag-assist config set provider deepseek
-rag-assist config set provider groq
-rag-assist config set provider local
-rag-assist config set local_model_path ~/models/qwen2.5-coder-7b-q4_k_m.gguf
-rag-assist config set local_llama_bin ~/llama.cpp/build/bin/llama-cli
+nusa-rg config set provider deepseek
+nusa-rg config set provider groq
+nusa-rg config set provider local
+nusa-rg config set local_model_path ~/models/qwen2.5-coder-7b-q4_k_m.gguf
+nusa-rg config set local_llama_bin ~/llama.cpp/build/bin/llama-cli
 ```
 
 Each provider's key can come from the environment variable models.dev lists for
@@ -125,7 +125,7 @@ it, or from the encrypted keystore — stored per provider:
 
 ```bash
 export GROQ_API_KEY=...                                   # env var path
-rag-assist config set api_key --provider groq --secret    # keystore path
+nusa-rg config set api_key --provider groq --secret    # keystore path
 ```
 
 Lookup order is: per-provider keystore entry → provider environment variable →
@@ -140,11 +140,11 @@ built in.
 
 ### Failover
 
-Name one or more fallback providers and `rag-assist` moves down the chain when
+Name one or more fallback providers and `nusa-rg` moves down the chain when
 the active one fails, so a rate limit or an outage no longer ends the session:
 
 ```bash
-rag-assist config set fallback_providers "groq, deepseek:deepseek-flash"
+nusa-rg config set fallback_providers "groq, deepseek:deepseek-flash"
 ```
 
 Entries are `id` or `id:model`; use the model form to pick a specific model on
@@ -155,12 +155,12 @@ and reported by `doctor`. When a fallback answers, the turn says so, and
 
 > **Reasoning models.** Some models (including Ollama's `beam`) spend the first
 > part of the token budget reasoning and can return an empty answer when that
-> budget runs out. `rag-assist` detects this and reports it with the partial
+> budget runs out. `nusa-rg` detects this and reports it with the partial
 > reasoning attached, rather than showing a blank reply. Raise the ceiling with
-> `rag-assist config set max_tokens 4096`.
+> `nusa-rg config set max_tokens 4096`.
 
 > **Ollama Cloud** is not in models.dev; point at it directly with
-> `rag-assist config set api_base_url https://ollama.com/v1`.
+> `nusa-rg config set api_base_url https://ollama.com/v1`.
 
 ## Saving tokens: rtk and Caveman
 
@@ -169,15 +169,15 @@ Two independent levers, one on each side of the bill.
 ### rtk — compress command output before it reaches the model
 
 When [rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) is installed,
-`rag-assist run` executes commands as `rtk <command>` and RTK rewrites the
+`nusa-rg run` executes commands as `rtk <command>` and RTK rewrites the
 output first — a 47-line `npm install` becomes a four-line summary. A hard byte
 cap applies with or without rtk, so one noisy command can never blow up the
 context window.
 
 ```bash
-rag-assist run git status
-rag-assist run --ask "what broke?" pytest -x    # answer with the output as context
-rag-assist run --raw npm install                # bypass rtk for this run
+nusa-rg run git status
+nusa-rg run --ask "what broke?" pytest -x    # answer with the output as context
+nusa-rg run --raw npm install                # bypass rtk for this run
 ```
 
 Inside a chat session, a line starting with `!` runs the command the same way;
@@ -204,7 +204,7 @@ The details:
 * `run` exits with the command's own exit code, so it composes with scripts.
   `--ask` turns a failure into an immediate explanation instead of a stack
   trace you have to describe later.
-* `rag-assist doctor` reports whether rtk is installed.
+* `nusa-rg doctor` reports whether rtk is installed.
 
 ### Caveman — telegraphic answers, every fact kept
 
@@ -216,10 +216,10 @@ accuracy. It is a prompt-level style, so it works with every provider,
 external or local, and needs no plugin runtime.
 
 ```bash
-rag-assist config set response_style caveman     # persistent
-rag-assist chat --caveman                        # this session (or one question)
-rag-assist chat --caveman "explain this traceback"
-rag-assist run --caveman --ask "what changed?" git diff
+nusa-rg config set response_style caveman     # persistent
+nusa-rg chat --caveman                        # this session (or one question)
+nusa-rg chat --caveman "explain this traceback"
+nusa-rg run --caveman --ask "what changed?" git diff
 ```
 
 Inside a session, `/caveman` toggles the style and `/caveman on|off` sets it
@@ -227,7 +227,7 @@ explicitly. `status` shows which style is active.
 
 ## Configuration
 
-`~/.rag-assist/config.yaml`, created automatically on first run.
+`~/.nusa-rg/config.yaml`, created automatically on first run.
 
 ```yaml
 model_provider: external        # external | local
@@ -254,13 +254,13 @@ update_remote: ''                # empty = the official GitHub repository only
 
 ### Offline updates
 
-`rag-assist update` refuses any remote other than
+`nusa-rg update` refuses any remote other than
 `https://github.com/PADZ-PRD/RAG-termux-cli`, because an update runs
 `git reset --hard` against `origin`. To update from a local mirror or an
 offline bare repository, name it explicitly:
 
 ```bash
-rag-assist config set update_remote ~/RAG-termux-cli.git
+nusa-rg config set update_remote ~/RAG-termux-cli.git
 ```
 
 That setting is the authorisation. It is not a default that a stray `origin`
@@ -323,7 +323,7 @@ autolink), images, escaping, line breaks, tables with alignment, footnotes,
 To see the raw Markdown instead:
 
 ```bash
-rag-assist chat --plain "..."        # or --no-markdown
+nusa-rg chat --plain "..."        # or --no-markdown
 ```
 
 ### Why markdown2
@@ -344,21 +344,21 @@ applied only outside code regions.
 ## Updating
 
 ```bash
-rag-assist update --check     # only report whether a newer version exists
-rag-assist update             # update, then re-run install.sh
-rag-assist update --force     # discard local commits first
+nusa-rg update --check     # only report whether a newer version exists
+nusa-rg update             # update, then re-run install.sh
+nusa-rg update --force     # discard local commits first
 ```
 
 The same is available inside a chat session as `/update`.
 
-Config, credentials and the index live in `~/.rag-assist` and are never touched
+Config, credentials and the index live in `~/.nusa-rg` and are never touched
 by an update, so keys and history survive.
 
 Two cases are reported rather than guessed at:
 
 * **Installed from a package.** A copy installed from a Termux repository has no
   checkout to update; the command says so and points at `pkg upgrade
-  termux-rag-assist`.
+  termux-nusa-rg`.
 * **Not this repository.** The checkout's `origin` must resolve to
   `github.com/PADZ-PRD/RAG-termux-cli`. A `.git` directory belonging to some
   other project is refused outright.
@@ -370,7 +370,7 @@ A dirty working tree or a diverged branch stops the update and says so; pass
 
 | Guarantee | How |
 | :-- | :-- |
-| No plaintext credentials | API keys sealed with AES-256-GCM in `~/.rag-assist/keystore.bin`; `config.yaml` holds only a `keystore://` reference |
+| No plaintext credentials | API keys sealed with AES-256-GCM in `~/.nusa-rg/keystore.bin`; `config.yaml` holds only a `keystore://` reference |
 | No query or code in logs | Logs record timestamp, level, event, and a SHA-256 fingerprint of the query |
 | No token leakage | Every log line passes a masking filter (`sk-…`, Bearer headers, private keys → `***MASKED***`) |
 | Restricted files | `config.yaml`, `index.db`, and logs are `0600`; state directories are `0700` |
@@ -384,13 +384,13 @@ A dirty working tree or a diverged branch stops the update and says so; pass
 > `termux-crypto`, which are not published Termux packages. This implementation
 > uses the `cryptography` library for AES-256-GCM and keeps the master key in a
 > `0600` file inside the Android app sandbox, which provides the same
-> guarantee. Swap in a real keystore behind `ragassist/crypto.py` if one becomes
+> guarantee. Swap in a real keystore behind `nusa_rg/crypto.py` if one becomes
 > available — nothing else needs to change.
 
 State lives in one directory:
 
 ```
-~/.rag-assist/
+~/.nusa-rg/
 ├── config.yaml        # settings; keystore references only
 ├── keystore.bin       # AES-256-GCM sealed credentials
 ├── master.key         # 0600, scrypt-derives the keystore key
@@ -401,7 +401,7 @@ State lives in one directory:
     └── audit.log      # config changes and index operations
 ```
 
-Set `RAG_ASSIST_HOME` to relocate everything.
+Set `NUSA_RG_HOME` to relocate everything.
 
 ## Architecture
 
@@ -429,7 +429,7 @@ resulting text as labelled, sanitised context.
 ```bash
 pip install -e '.[dev]'
 pytest                    # 493 tests
-python -m ragassist       # run without installing
+python -m nusa_rg       # run without installing
 ```
 
 The suite needs no network access and no API key: HTTP calls are faked and the
@@ -439,18 +439,18 @@ llama.cpp path runs against a stub executable.
 
 | Symptom | Fix |
 | :-- | :-- |
-| `no API key configured` | `rag-assist config set api_key --secret` |
-| `no API key for provider 'x'` | `rag-assist config set api_key --provider x --secret`, or export the provider's env var (`providers show x`) |
-| `unknown provider` | Find the id with `rag-assist providers list --search <text>` |
-| Provider catalogue unreadable | `rag-assist providers refresh` to replace the snapshot |
+| `no API key configured` | `nusa-rg config set api_key --secret` |
+| `no API key for provider 'x'` | `nusa-rg config set api_key --provider x --secret`, or export the provider's env var (`providers show x`) |
+| `unknown provider` | Find the id with `nusa-rg providers list --search <text>` |
+| Provider catalogue unreadable | `nusa-rg providers refresh` to replace the snapshot |
 | `llama.cpp binary not found` | Build llama.cpp, or set `local_llama_bin` to its full path |
 | `local model not found` | Check `local_model_path` points at the `.gguf` file |
-| No snippets retrieved | Re-run `rag-assist index <path>`; confirm the files match `ignore_globs` |
-| Retrieval feels slow | Run `rag-assist index --force` to rebuild a stale index |
+| No snippets retrieved | Re-run `nusa-rg index <path>`; confirm the files match `ignore_globs` |
+| Retrieval feels slow | Run `nusa-rg index --force` to rebuild a stale index |
 | Answers ignore your project | Confirm `default_project_path` is set, or pass `--project` |
 | Shell operators rejected | `run` and `!command` decline `;`, `\|`, `&`, backticks, `$`, `<`, `>` and newlines by design; use a real terminal for pipelines |
 | Command output truncated | Raise `command_output_limit`, or let rtk trim it first |
-| Answers cost more than they should | `rag-assist config set response_style caveman` and install [rtk](https://github.com/rtk-ai/rtk) |
+| Answers cost more than they should | `nusa-rg config set response_style caveman` and install [rtk](https://github.com/rtk-ai/rtk) |
 | Answers came from the wrong provider | `status` shows the fallback chain; that turn said which provider answered |
 
 ## License

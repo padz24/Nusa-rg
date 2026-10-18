@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from ragassist import render, ui
+from nusa_rg import render, ui
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 

@@ -1,4 +1,4 @@
-# Termux RAG Assistant
+# NUSA-RG
 
 > Dibuat oleh PADZ-PRD · 20261018 · Bahasa: Indonesia
 
@@ -20,7 +20,7 @@
 
 ## Ringkasan Produk
 
-Termux RAG Assistant adalah solusi asisten pemrograman berbasis Command Line Interface (CLI) yang dioptimalkan secara khusus untuk ekosistem Termux pada perangkat Android dengan arsitektur ARM. Produk ini hadir untuk menjembatani celah antara pengembangan kode di lingkungan terminal mobile dengan kemampuan kecerdasan buatan tingkat lanjut. Nilai utama dari sistem ini terletak pada pendekatan Hybrid LLM, di mana pengguna dapat memilih antara efisiensi API eksternal seperti OpenAI atau Groq, maupun privasi penuh melalui eksekusi model lokal menggunakan llama.cpp.
+NUSA-RG adalah solusi asisten pemrograman berbasis Command Line Interface (CLI) yang dioptimalkan secara khusus untuk ekosistem Termux pada perangkat Android dengan arsitektur ARM. Produk ini hadir untuk menjembatani celah antara pengembangan kode di lingkungan terminal mobile dengan kemampuan kecerdasan buatan tingkat lanjut. Nilai utama dari sistem ini terletak pada pendekatan Hybrid LLM, di mana pengguna dapat memilih antara efisiensi API eksternal seperti OpenAI atau Groq, maupun privasi penuh melalui eksekusi model lokal menggunakan llama.cpp.
 
 Kekuatan utama produk ini adalah implementasi Retrieval-Augmented Generation (RAG). Fitur ini memungkinkan asisten untuk tidak hanya menjawab pertanyaan umum, tetapi juga mengindeks seluruh struktur file dalam proyek lokal pengguna. Dengan kemampuan ini, asisten dapat mengambil potongan kode (snippets) yang relevan dari direktori proyek dan menggunakannya sebagai konteks tambahan saat menghasilkan jawaban. Hal ini memastikan bahwa saran kode, debugging, dan penjelasan arsitektur yang diberikan sangat spesifik terhadap basis kode yang sedang dikerjakan oleh pengguna di perangkat Android mereka, tanpa perlu meninggalkan lingkungan terminal.
 
@@ -32,10 +32,10 @@ Ketiadaan asisten berbasis terminal yang mampu melakukan indeksasi file lokal me
 
 ## Tujuan & Metrik Keberhasilan
 
-Tujuan utama dari pengembangan Termux RAG Assistant adalah menyediakan alat bantu coding yang terintegrasi, cepat, dan mudah diakses bagi pengguna Termux. Keberhasilan implementasi akan diukur melalui metrik konkret berikut:
+Tujuan utama dari pengembangan NUSA-RG adalah menyediakan alat bantu coding yang terintegrasi, cepat, dan mudah diakses bagi pengguna Termux. Keberhasilan implementasi akan diukur melalui metrik konkret berikut:
 
 *   **Kemudahan Instalasi dan Aksesibilitas**
-    *   FR-01: Sistem harus dapat diinstal melalui satu baris perintah `pkg install termux-rag-assist` [ASUMSI] paket tersedia di repository komunitas atau melalui script instalasi otomatis.
+    *   FR-01: Sistem harus dapat diinstal melalui satu baris perintah `pkg install termux-nusa-rg` [ASUMSI] paket tersedia di repository komunitas atau melalui script instalasi otomatis.
     *   AC-01: Proses instalasi selesai tanpa error pada Termux versi 0.118 ke atas dalam waktu kurang dari 120 detik pada koneksi internet stabil.
 
 *   **Kapasitas Hybrid LLM**
@@ -93,10 +93,10 @@ Bagian ini mendefinisikan batasan fitur yang akan dikembangkan pada rilis pertam
 Persyaratan fungsional berikut mendefinisikan perilaku sistem yang harus diimplementasikan untuk memenuhi kebutuhan pengguna.
 
 **1. CLI Chat Interface**
-*   **FR-05:** Sistem harus menyediakan perintah `rag-assist chat` untuk memulai sesi percakapan interaktif.
+*   **FR-05:** Sistem harus menyediakan perintah `nusa-rg chat` untuk memulai sesi percakapan interaktif.
     *   **AC-05:** Pengguna dapat mengirim pesan dan menerima respon dari LLM dalam satu layar terminal.
     *   **AC-06:** Sistem mendukung input multi-baris menggunakan karakter escape atau kombinasi tombol tertentu sebelum pesan dikirim.
-*   **FR-06:** Sistem harus menyediakan perintah `rag-assist --help` untuk menampilkan daftar perintah dan opsi penggunaan.
+*   **FR-06:** Sistem harus menyediakan perintah `nusa-rg --help` untuk menampilkan daftar perintah dan opsi penggunaan.
     *   **AC-07:** Dokumentasi bantuan menampilkan deskripsi singkat untuk setiap command (`chat`, `index`, `config`).
 
 **2. Hybrid LLM Access**
@@ -107,7 +107,7 @@ Persyaratan fungsional berikut mendefinisikan perilaku sistem yang harus diimple
     *   **AC-10:** Sistem menampilkan pesan error yang jelas jika koneksi internet terputus atau API Key tidak valid.
 
 **3. Local Project RAG**
-*   **FR-09:** Sistem harus mampu mengindeks file dalam direktori proyek melalui perintah `rag-assist index <path>`.
+*   **FR-09:** Sistem harus mampu mengindeks file dalam direktori proyek melalui perintah `nusa-rg index <path>`.
     *   **AC-11:** Sistem memindai semua file teks (mis. `.py`, `.js`, `.cpp`, `.txt`) dan menyimpannya ke dalam database SQLite lokal.
     *   **AC-12:** Proses indeksasi untuk proyek dengan [ASUMSI] 100 file harus selesai dalam waktu kurang dari 30 detik.
 *   **FR-10:** Sistem harus melakukan retrieval konteks secara otomatis sebelum mengirim prompt ke LLM.
@@ -117,13 +117,13 @@ Persyaratan fungsional berikut mendefinisikan perilaku sistem yang harus diimple
 **4. Prompt Customization & Configuration**
 *   **FR-11:** Sistem harus memungkinkan pengguna mengatur *system prompt* untuk mengubah perilaku asisten.
     *   **AC-15:** Perubahan pada field `system_prompt` di `config.yaml` langsung diterapkan pada sesi chat berikutnya.
-*   **FR-12:** Sistem harus mengelola konfigurasi melalui file `~/.rag-assist/config.yaml`.
+*   **FR-12:** Sistem harus mengelola konfigurasi melalui file `~/.nusa-rg/config.yaml`.
     *   **AC-16:** File konfigurasi menyimpan parameter: `api_key`, `model_provider`, `local_model_path`, dan `default_project_path`.
     *   **AC-17:** Sistem dapat membuat file konfigurasi default secara otomatis jika file tersebut belum ditemukan saat aplikasi pertama kali dijalankan.
 
 ## Persyaratan Non‑Fungsional, Keamanan, dan Pembaruan
 
-Bagian ini menetapkan standar kualitas, batasan teknis, dan protokol keamanan untuk memastikan Termux RAG Assistant berjalan stabil dan aman di lingkungan Android.
+Bagian ini menetapkan standar kualitas, batasan teknis, dan protokol keamanan untuk memastikan NUSA-RG berjalan stabil dan aman di lingkungan Android.
 
 **1. Performa dan Kompatibilitas**
 * **NFR-01: Kompatibilitas Lingkungan**: Sistem harus dapat berjalan sepenuhnya pada Termux versi 0.118 atau yang lebih baru pada perangkat Android dengan arsitektur ARM64.
@@ -131,7 +131,7 @@ Bagian ini menetapkan standar kualitas, batasan teknis, dan protokol keamanan un
 * **NFR-02: Latensi Respons**: Proses retrieval dokumen lokal harus selesai dalam waktu ≤ 2 detik, dan latency API eksternal ≤ 1 detik (tidak termasuk waktu generate token dari LLM).
     * **AC-19**: Pengujian pada direktori dengan 100 file menunjukkan waktu pencarian snippet ≤ 2 detik.
 * **NFR-03: Efisiensi Penyimpanan**: Total ukuran instalasi inti harus $< 500 MB. Jika menggunakan model lokal llama.cpp 7B, total ruang yang dibutuhkan adalah $< 2 GB.
-    * **AC-20**: Verifikasi ukuran folder `/data/data/com.termux/files/home/.rag-assist` setelah instalasi.
+    * **AC-20**: Verifikasi ukuran folder `/data/data/com.termux/files/home/.nusa-rg` setelah instalasi.
 * **NFR-04: Keandalan Sistem**: Sistem harus memiliki mekanisme *graceful recovery* sehingga indeks proyek tidak korup setelah terjadi crash atau force-close Termux.
     * **AC-21**: Sistem dapat memuat kembali indeks SQLite FTS5 setelah proses dimatikan secara paksa tanpa perlu re-indeksasi total.
 
@@ -151,11 +151,11 @@ Bagian ini menetapkan standar kualitas, batasan teknis, dan protokol keamanan un
 * **NFR-05: Stack Teknologi**: Menggunakan Python 3.10+, library `click` untuk CLI, `PyYAML` untuk konfigurasi, dan SQLite FTS5 untuk mesin pencarian.
 * **NFR-06: Desain Modular**: Arsitektur harus memisahkan logika CLI, LLM Client, RAG Module, dan Logging agar memudahkan pemeliharaan.
     * **AC-27**: Penggantian library LLM client tidak boleh mempengaruhi logika indexing pada RAG Module.
-* **NFR-07: Dokumentasi**: Menyediakan manual penggunaan (`man rag-assist`) dan panduan konfigurasi keamanan.
+* **NFR-07: Dokumentasi**: Menyediakan manual penggunaan (`man nusa-rg`) dan panduan konfigurasi keamanan.
 
 ## Arsitektur Sistem
 
-Termux RAG Assistant mengadopsi arsitektur modular yang dirancang untuk efisiensi sumber daya pada perangkat mobile. Alur kerja sistem dimulai dari **CLI Frontend** yang menerima input pengguna. Input ini kemudian diproses oleh **Command Parser** (berbasis library `click`) untuk menentukan apakah pengguna ingin melakukan chat, mengindeks proyek, atau mengubah konfigurasi.
+NUSA-RG mengadopsi arsitektur modular yang dirancang untuk efisiensi sumber daya pada perangkat mobile. Alur kerja sistem dimulai dari **CLI Frontend** yang menerima input pengguna. Input ini kemudian diproses oleh **Command Parser** (berbasis library `click`) untuk menentukan apakah pengguna ingin melakukan chat, mengindeks proyek, atau mengubah konfigurasi.
 
 Setelah perintah divalidasi, kendali berpindah ke **Core Engine**. Core Engine bertindak sebagai orkestrator utama yang mengelola dua jalur eksekusi LLM. Jalur pertama adalah **API Client**, yang melakukan request HTTP ke provider eksternal seperti OpenAI atau Groq. Jalur kedua adalah **Local LLM Runner**, yang menginteraksi langsung dengan binary `llama.cpp` untuk menjalankan model GGUF secara lokal di CPU/GPU perangkat Android.
 
@@ -165,7 +165,7 @@ Untuk memberikan konteks proyek, Core Engine memanggil **RAG Module**. Modul ini
 3. **Retriever**: Mengambil snippet kode yang paling relevan berdasarkan query pengguna menggunakan teknik *keyword-based search* atau *vector similarity* [ASUMSI].
 4. **Prompt Composer**: Menggabungkan snippet yang ditemukan dengan query asli pengguna dan *system prompt* untuk membentuk instruksi final yang dikirim ke LLM.
 
-Seluruh operasional ini didukung oleh **Configuration Layer** yang membaca file `~/.rag-assist/config.yaml` untuk menentukan endpoint API, path model lokal, dan pengaturan indeks. Terakhir, **Logging & Error Handling** terpusat di Core Engine untuk memastikan setiap kegagalan (seperti timeout API atau kekurangan RAM saat menjalankan model lokal) ditangani dengan pesan error yang informatif tanpa membocorkan data sensitif.
+Seluruh operasional ini didukung oleh **Configuration Layer** yang membaca file `~/.nusa-rg/config.yaml` untuk menentukan endpoint API, path model lokal, dan pengaturan indeks. Terakhir, **Logging & Error Handling** terpusat di Core Engine untuk memastikan setiap kegagalan (seperti timeout API atau kekurangan RAM saat menjalankan model lokal) ditangani dengan pesan error yang informatif tanpa membocorkan data sensitif.
 
 ## Model Data, Penyimpanan, & API
 
@@ -175,10 +175,10 @@ Sistem menggunakan kombinasi penyimpanan berbasis file dan database relasional r
 
 | Komponen | Tipe | Lokasi / Format | Deskripsi |
 | :--- | :--- | :--- | :--- |
-| **Indeks Proyek** | SQLite FTS5 | `~/.rag-assist/index.db` | Menyimpan tokenisasi konten file, metadata (path, line number), dan skor relevansi. |
-| **Konfigurasi** | YAML | `~/.rag-assist/config.yaml` | Menyimpan endpoint API, path model lokal, daftar folder yang diabaikan (`.gitignore`), dan preferensi model. |
+| **Indeks Proyek** | SQLite FTS5 | `~/.nusa-rg/index.db` | Menyimpan tokenisasi konten file, metadata (path, line number), dan skor relevansi. |
+| **Konfigurasi** | YAML | `~/.nusa-rg/config.yaml` | Menyimpan endpoint API, path model lokal, daftar folder yang diabaikan (`.gitignore`), dan preferensi model. |
 | **Kredensial** | Encrypted | `termux-keystore` | Menyimpan API Key terenkripsi yang hanya bisa diakses oleh aplikasi melalui API keystore Android. |
-| **Application Log** | Text | `~/.rag-assist/logs/app.log` | Menyimpan jejak eksekusi dengan izin akses 600 dan mekanisme rotasi setiap 10 MB [ASUMSI]. |
+| **Application Log** | Text | `~/.nusa-rg/logs/app.log` | Menyimpan jejak eksekusi dengan izin akses 600 dan mekanisme rotasi setiap 10 MB [ASUMSI]. |
 
 **2. Antarmuka API Internal (Inter-Module)**
 
@@ -206,7 +206,7 @@ Bagian ini menetapkan standar pencatatan aktivitas sistem untuk memastikan trans
     *   **AC-32**: Verifikasi bahwa tidak ada string yang cocok dengan pola API Key (misal: `sk-...`) atau isi file project yang muncul dalam file `.log`.
 
 *   **SEC-07: Proteksi Penyimpanan Log**
-    *   Log harus disimpan di direktori privat pengguna Termux (contoh: `~/.rag-assist/logs/app.log`).
+    *   Log harus disimpan di direktori privat pengguna Termux (contoh: `~/.nusa-rg/logs/app.log`).
     *   File log wajib memiliki izin akses `600` (read/write hanya untuk pemilik file) untuk mencegah akses oleh aplikasi lain di lingkungan Android.
     *   **AC-33**: Perintah `ls -l` pada file log menunjukkan izin `-rw-------`.
 
@@ -218,18 +218,18 @@ Bagian ini menetapkan standar pencatatan aktivitas sistem untuk memastikan trans
 *   **SEC-09: Fasilitas Audit Akses**
     *   Sistem harus mencatat setiap upaya perubahan pada file konfigurasi (`config.yaml`) dan proses pembuatan/penghapusan indeks proyek.
     *   Log audit harus mencatat waktu kejadian dan hasil operasi (SUCCESS/FAILED).
-    *   **AC-35**: Setiap kali perintah `rag-assist config` dijalankan, terdapat entri log yang mencatat perubahan parameter konfigurasi.
+    *   **AC-35**: Setiap kali perintah `nusa-rg config` dijalankan, terdapat entri log yang mencatat perubahan parameter konfigurasi.
 
 ## Antarmuka CLI & Pengalaman Pengguna
 
 Interaksi pengguna dirancang untuk meminimalkan hambatan (friction) dengan memanfaatkan standar CLI yang intuitif dan memberikan feedback visual yang jelas meskipun berada di lingkungan terminal.
 
 *   **FR-13: Struktur Perintah Utama**
-    *   Sistem menyediakan entry point tunggal `rag-assist` dengan sub-perintah berikut:
-        *   `rag-assist chat`: Memulai sesi percakapan interaktif dengan LLM.
-        *   `rag-assist index`: Melakukan scanning dan indeksasi direktori proyek yang ditentukan.
-        *   `rag-assist config`: Mengatur API key, pemilihan model, dan path proyek.
-    *   **AC-36**: Menjalankan `rag-assist --help` menampilkan daftar perintah di atas beserta deskripsi singkatnya.
+    *   Sistem menyediakan entry point tunggal `nusa-rg` dengan sub-perintah berikut:
+        *   `nusa-rg chat`: Memulai sesi percakapan interaktif dengan LLM.
+        *   `nusa-rg index`: Melakukan scanning dan indeksasi direktori proyek yang ditentukan.
+        *   `nusa-rg config`: Mengatur API key, pemilihan model, dan path proyek.
+    *   **AC-36**: Menjalankan `nusa-rg --help` menampilkan daftar perintah di atas beserta deskripsi singkatnya.
 
 *   **FR-14: Mode Interaktif (Chat Session)**
     *   Saat masuk ke mode `chat`, sistem menampilkan prompt berwarna (misal: hijau untuk User, biru untuk Assistant) untuk membedakan peran.
@@ -243,15 +243,15 @@ Interaksi pengguna dirancang untuk meminimalkan hambatan (friction) dengan meman
     *   **AC-38**: Spinner muncul dalam waktu < 500 ms setelah pengguna menekan Enter.
 
 *   **FR-16: Sistem Bantuan Terintegrasi**
-    *   Perintah `rag-assist --help` atau `-h` harus menampilkan dokumentasi singkat mengenai sintaks perintah, contoh penggunaan, dan daftar flag yang tersedia.
-    *   **AC-39**: Dokumentasi help mencakup contoh perintah lengkap seperti `rag-assist index /home/project/my-app`.
+    *   Perintah `nusa-rg --help` atau `-h` harus menampilkan dokumentasi singkat mengenai sintaks perintah, contoh penggunaan, dan daftar flag yang tersedia.
+    *   **AC-39**: Dokumentasi help mencakup contoh perintah lengkap seperti `nusa-rg index /home/project/my-app`.
 
 ## Kriteria Penerimaan
 
 Kriteria ini menjadi standar absolut untuk menentukan apakah fitur telah selesai dikembangkan dan layak untuk dirilis ke tahap produksi.
 
 *   **AC-40: Keberhasilan Instalasi**
-    *   Proses instalasi melalui satu baris perintah `pkg install termux-rag-assist` (atau script installer `.sh`) harus berjalan tanpa error pada Termux versi 0.118 ke atas di perangkat ARM64.
+    *   Proses instalasi melalui satu baris perintah `pkg install termux-nusa-rg` (atau script installer `.sh`) harus berjalan tanpa error pada Termux versi 0.118 ke atas di perangkat ARM64.
 
 *   **AC-41: Fungsionalitas Dasar Chat**
     *   CLI mampu menampilkan prompt chat, mengirimkan input pengguna ke LLM (OpenAI/Groq/llama.cpp), dan menampilkan balasan teks secara streaming atau utuh tanpa crash.
@@ -263,14 +263,14 @@ Kriteria ini menjadi standar absolut untuk menentukan apakah fitur telah selesai
     *   Pada set uji internal yang terdiri dari 20 pertanyaan spesifik tentang kode proyek, sistem harus mampu mengambil snippet yang relevan dengan skor cosine similarity ≥ 0.7 [ASUMSI] dalam 80% kasus.
 
 *   **AC-30: Fleksibilitas Perpindahan Model**
-    *   Pengguna dapat mengubah model dari `external` (API) ke `local` (llama.cpp) melalui `rag-assist config` dan langsung menggunakannya dalam sesi chat berikutnya tanpa perlu melakukan restart aplikasi atau reboot terminal.
+    *   Pengguna dapat mengubah model dari `external` (API) ke `local` (llama.cpp) melalui `nusa-rg config` dan langsung menggunakannya dalam sesi chat berikutnya tanpa perlu melakukan restart aplikasi atau reboot terminal.
 
 *   **AC-31: Keamanan Kredensial**
     *   Tidak ada API key atau password yang tersimpan dalam bentuk plaintext di dalam file `config.yaml` atau log; semua kredensial harus terenkripsi menggunakan `termux-crypto` atau disimpan di `termux-keystore`.
 
 ## Jadwal & Milestone
 
-Bagian ini menetapkan lini masa pengembangan Termux RAG Assistant, mulai dari pengembangan prototipe awal hingga rilis stabil (General Availability). Jadwal ini dirancang untuk memastikan setiap komponen inti—terutama integrasi Hybrid LLM dan modul RAG—diuji secara bertahap pada berbagai perangkat Android ARM64.
+Bagian ini menetapkan lini masa pengembangan NUSA-RG, mulai dari pengembangan prototipe awal hingga rilis stabil (General Availability). Jadwal ini dirancang untuk memastikan setiap komponen inti—terutama integrasi Hybrid LLM dan modul RAG—diuji secara bertahap pada berbagai perangkat Android ARM64.
 
 | ID Milestone | Milestone | Tanggal Target | Aktivitas Utama & Deliverables | Kriteria Keberhasilan |
 | :--- | :--- | :--- | :--- | :--- |
@@ -278,7 +278,7 @@ Bagian ini menetapkan lini masa pengembangan Termux RAG Assistant, mulai dari pe
 | **MS-02** | **Hybrid LLM Support** | 2025-02-15 | Integrasi binary `llama.cpp` untuk eksekusi model lokal, pembuatan sistem konfigurasi dinamis via `config.yaml`, dan manajemen memori untuk model 7B. | Pengguna dapat beralih antara API eksternal dan model lokal tanpa melakukan instalasi ulang aplikasi. |
 | **MS-03** | **Performance Tuning** | 2025-04-01 | Optimasi latency retrieval agar < 2 detik [ASUMSI], kompresi database indeks, dan pengujian kompatibilitas pada minimal 5 versi Android berbeda. | Latency retrieval konsisten di bawah 2 detik untuk proyek dengan > 100 file pada perangkat ARM64. |
 | **MS-04** | **Beta Release & User Testing** | 2025-05-15 | Distribusi paket beta ke komunitas Termux, pengumpulan feedback melalui survei, dan perbaikan bug kritis berdasarkan laporan pengguna. | Skor kepuasan pengguna mencapai ≥ 80% dan tidak ada bug kategori *blocker* yang tersisa. |
-| **MS-05** | **GA (General Availability)** | 2025-07-01 | Finalisasi dokumentasi lengkap (User Guide & Security Policy), optimasi paket instalasi `pkg`, dan rilis versi stabil 1.0.0. | Paket dapat diinstal melalui satu baris perintah `pkg install termux-rag-assist` secara stabil. |
+| **MS-05** | **GA (General Availability)** | 2025-07-01 | Finalisasi dokumentasi lengkap (User Guide & Security Policy), optimasi paket instalasi `pkg`, dan rilis versi stabil 1.0.0. | Paket dapat diinstal melalui satu baris perintah `pkg install termux-nusa-rg` secara stabil. |
 
 **Catatan Implementasi Milestone:**
 1. **Ketergantungan Teknis:** Milestone MS-02 sangat bergantung pada ketersediaan binary `llama.cpp` yang teroptimasi untuk arsitektur ARM64 Android. Jika terjadi kendala kompilasi, target tanggal dapat bergeser maksimal 14 hari.

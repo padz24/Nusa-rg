@@ -8,7 +8,7 @@ import stat
 import pytest
 from click.testing import CliRunner
 
-from ragassist.cli import main
+from nusa_rg.cli import main
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def test_help_includes_examples(runner):
     """AC-39."""
     result = run(runner, ["--help"])
     assert "Examples:" in result.output
-    assert "rag-assist index" in result.output
+    assert "nusa-rg index" in result.output
 
 
 def test_short_help_flag(runner):
@@ -41,18 +41,26 @@ def test_short_help_flag(runner):
 
 
 def test_version(runner):
-    from ragassist import __version__
+    from nusa_rg import __version__
 
     result = run(runner, ["--version"])
     assert result.exit_code == 0
     # Compared against the package, not a literal: a hardcoded version here
     # fails on every release, which is how a stale pin goes unnoticed.
     assert __version__ in result.output
-    assert result.output.strip() == f"rag-assist, version {__version__}"
+    assert result.output.strip() == f"nusa-rg, version {__version__}"
 
 
 def test_unknown_command_fails(runner):
     assert run(runner, ["frobnicate"]).exit_code != 0
+
+
+def test_bare_invocation_shows_the_banner(runner):
+    """A bare `nusa-rg` prints the emblem above the command list."""
+    result = run(runner, [])
+    assert result.exit_code == 2
+    assert "✦" in result.output, "the star renders above the letter N"
+    assert "Commands:" in result.output
 
 
 # --------------------------------------------------------------------- index
@@ -62,7 +70,7 @@ def test_index_creates_the_database(runner, sample_project):
     assert result.exit_code == 0, result.output
     assert "Index complete" in result.output
 
-    from ragassist.rag import ProjectIndex
+    from nusa_rg.rag import ProjectIndex
 
     with ProjectIndex() as index:
         assert index.count()[0] == 3
@@ -71,7 +79,7 @@ def test_index_creates_the_database(runner, sample_project):
 def test_index_sets_default_project_path(runner, sample_project):
     """AC-16 / AC-30."""
     run(runner, ["index", str(sample_project)])
-    from ragassist.config import Config
+    from nusa_rg.config import Config
 
     assert Config().project_path() == str(sample_project.resolve())
 
@@ -127,7 +135,7 @@ def test_config_show(runner):
 
 
 def test_config_show_hides_key_by_default(runner):
-    from ragassist.config import Config
+    from nusa_rg.config import Config
 
     Config().set_api_key("sk-should-not-appear")
     result = run(runner, ["config", "show"])
@@ -135,7 +143,7 @@ def test_config_show_hides_key_by_default(runner):
 
 
 def test_config_show_reveal(runner):
-    from ragassist.config import Config
+    from nusa_rg.config import Config
 
     Config().set_api_key("sk-visible-when-asked")
     result = run(runner, ["config", "show", "--reveal"])
@@ -144,7 +152,7 @@ def test_config_show_reveal(runner):
 
 def test_config_set_provider(runner):
     """AC-30."""
-    from ragassist.config import Config
+    from nusa_rg.config import Config
 
     assert run(runner, ["config", "set", "provider", "local"]).exit_code == 0
     assert Config().get("model_provider") == "local"
@@ -176,8 +184,8 @@ def test_config_set_api_key_prompts_secret(runner):
     assert result.exit_code == 0
     assert "encrypted" in result.output
 
-    from ragassist import paths
-    from ragassist.config import Config
+    from nusa_rg import paths
+    from nusa_rg.config import Config
 
     assert "sk-prompted-secret" not in paths.config_path().read_text()
     assert Config().get("api_key") == "sk-prompted-secret"
@@ -185,13 +193,13 @@ def test_config_set_api_key_prompts_secret(runner):
 
 def test_config_set_api_key_arg_form(runner):
     assert run(runner, ["config", "set", "api_key", "sk-inline", "--secret"]).exit_code == 0
-    from ragassist.config import Config
+    from nusa_rg.config import Config
 
     assert Config().get("api_key") == "sk-inline"
 
 
 def test_config_clear_api_key(runner):
-    from ragassist.config import Config
+    from nusa_rg.config import Config
 
     run(runner, ["config", "set", "api_key", "sk-to-remove", "--secret"])
     result = run(runner, ["config", "set", "api_key", ""])
@@ -208,7 +216,7 @@ def test_config_path_command(runner):
 
 def test_config_change_is_audited(runner):
     """AC-35."""
-    from ragassist import paths
+    from nusa_rg import paths
 
     run(runner, ["config", "set", "provider", "local"])
     assert "config.set.model_provider" in paths.audit_log_path().read_text()
@@ -252,12 +260,12 @@ def test_chat_clear_command(runner):
 
 def test_chat_reports_retrieved_snippets(runner, sample_project, monkeypatch):
     """FR-15: snippets are highlighted before the answer."""
-    from ragassist.llm.base import LLMResponse, Usage
+    from nusa_rg.llm.base import LLMResponse, Usage
 
     def fake_generate(self, query, *, context="", system="", stream=False):
         return LLMResponse(text="stub answer", usage=Usage(), provider="stub")
 
-    monkeypatch.setattr("ragassist.llm.api_client.ApiClient.generate", fake_generate)
+    monkeypatch.setattr("nusa_rg.llm.api_client.ApiClient.generate", fake_generate)
 
     run(runner, ["config", "set", "api_key", "sk-stub", "--secret"])
     run(runner, ["index", str(sample_project)])
@@ -270,7 +278,7 @@ def test_chat_reports_retrieved_snippets(runner, sample_project, monkeypatch):
 
 def test_chat_multiline_block(runner, sample_project, monkeypatch):
     """AC-37: three code lines sent as one message."""
-    from ragassist.llm.base import LLMResponse, Usage
+    from nusa_rg.llm.base import LLMResponse, Usage
 
     seen = {}
 
@@ -278,7 +286,7 @@ def test_chat_multiline_block(runner, sample_project, monkeypatch):
         seen["user"] = query + context
         return LLMResponse(text="ok", usage=Usage(), provider="stub")
 
-    monkeypatch.setattr("ragassist.llm.api_client.ApiClient.generate", capture)
+    monkeypatch.setattr("nusa_rg.llm.api_client.ApiClient.generate", capture)
 
     run(runner, ["config", "set", "api_key", "sk-stub", "--secret"])
     run(runner, ["index", str(sample_project)])
@@ -289,10 +297,10 @@ def test_chat_multiline_block(runner, sample_project, monkeypatch):
 
 
 def test_chat_no_rag_skips_retrieval(runner, sample_project, monkeypatch):
-    from ragassist.llm.base import LLMResponse, Usage
+    from nusa_rg.llm.base import LLMResponse, Usage
 
     monkeypatch.setattr(
-        "ragassist.llm.api_client.ApiClient.generate",
+        "nusa_rg.llm.api_client.ApiClient.generate",
         lambda self, q, **kw: LLMResponse(text="plain", usage=Usage(), provider="stub"),
     )
     run(runner, ["config", "set", "api_key", "sk-stub", "--secret"])
@@ -328,7 +336,7 @@ def test_module_entry_point(sample_project):
     import sys
 
     completed = subprocess.run(
-        [sys.executable, "-m", "ragassist", "--help"],
+        [sys.executable, "-m", "nusa_rg", "--help"],
         capture_output=True, text=True, timeout=30,
     )
     assert completed.returncode == 0
@@ -336,7 +344,7 @@ def test_module_entry_point(sample_project):
 
 
 def test_security_state_files_are_owner_only_after_commands(runner, sample_project):
-    from ragassist import paths
+    from nusa_rg import paths
 
     run(runner, ["index", str(sample_project)])
     run(runner, ["chat", "/exit"], input="")

@@ -2,7 +2,7 @@
 
 Everything crossing the process boundary is built as an argument list and run
 with ``shell=False``; user text is additionally filtered by
-:mod:`ragassist.sanitize` so a pasted snippet can never become a command
+:mod:`nusa_rg.sanitize` so a pasted snippet can never become a command
 (SEC-02, AC-23).
 """
 

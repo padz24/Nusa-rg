@@ -1,6 +1,6 @@
 """Filesystem locations used by the assistant.
 
-Every mutable artefact lives under a single directory (``~/.rag-assist`` by
+Every mutable artefact lives under a single directory (``~/.nusa-rg`` by
 default) so that the whole install can be relocated, inspected, or removed by
 acting on one path. See AGENS.md section 9 ("Struktur Penyimpanan Lokal").
 """
@@ -18,13 +18,13 @@ def _home() -> Path:
 def base_dir() -> Path:
     """Root directory for all application state.
 
-    Honours ``RAG_ASSIST_HOME`` so tests (and users juggling several project
+    Honours ``NUSA_RG_HOME`` so tests (and users juggling several project
     trees) can redirect state without touching the real home directory.
     """
-    override = os.environ.get("RAG_ASSIST_HOME")
+    override = os.environ.get("NUSA_RG_HOME")
     if override:
         return Path(override).expanduser()
-    return _home() / ".rag-assist"
+    return _home() / ".nusa-rg"
 
 
 def config_path() -> Path:
