@@ -55,9 +55,8 @@ def main(ctx: click.Context, verbose: bool, no_colour: bool) -> None:
 
     \b
     Environment:
-      NUSA_RG_HOME    Override the state directory (default ~/.nusa-rg)
-      NO_COLOR        Set to disable ANSI colours
-      NUSA_RG_NO_ANIM Set to skip the banner intro animation
+      NUSA_RG_HOME   Override the state directory (default ~/.nusa-rg)
+      NO_COLOR       Set to disable ANSI colours
     """
     if no_colour:
         ui.set_colour(False)
@@ -84,16 +83,16 @@ STYLE_COMMANDS = {"/caveman", "/style"}
 def _print_chat_help() -> None:
     """List the session commands."""
     ui.heading("Chat commands")
-    rows = [
-        (("/exit", "bold"), "leave the session (Ctrl+D works too)"),
-        (("/quit", "bold"), "alias for /exit"),
-        (("/clear", "bold"), "forget the current topic and start over"),
-        (("/caveman [on|off]", "bold"), "toggle terse answers that save output tokens"),
-        (("!command", "bold"), "run a terminal command; its output becomes context"),
-        (("/help", "bold"), "show this list"),
-        (("/update", "bold"), "update a source checkout to the latest release"),
-    ]
-    ui.data_table(["command", "description"], rows, header=False)
+    for command, description in (
+        ("/exit", "leave the session (Ctrl+D works too)"),
+        ("/quit", "alias for /exit"),
+        ("/clear", "forget the current topic and start over"),
+        ("/caveman [on|off]", "toggle terse answers that save output tokens"),
+        ("!command", "run a terminal command; its output becomes context"),
+        ("/help", "show this list"),
+        ("/update", "update a source checkout to the latest release"),
+    ):
+        print(f"  {ui.paint(command, ui.BOLD)}  {description}")
 
 
 def _run_update(force: bool = False) -> None:
@@ -111,11 +110,9 @@ def _run_update(force: bool = False) -> None:
             ui.info("run: pkg upgrade termux-nusa-rg")
         return
 
-    ui.key_values([
-        ("installed", info.installed_version),
-        ("latest", info.remote_version or "unknown"),
-        ("checkout", info.source_dir),
-    ], label_width=10)
+    print(f"  installed  {info.installed_version}")
+    print(f"  latest     {info.remote_version or 'unknown'}")
+    print(f"  checkout   {info.source_dir}")
 
     if info.remote_version is None:
         ui.error(info.detail or "could not reach the remote")
@@ -179,8 +176,7 @@ def _read_multi_line() -> str:
 @click.argument("message", required=False)
 @click.option("--project", "-p", default=None, help="Project directory to index first.")
 @click.option("--no-rag", is_flag=True, help="Answer without retrieving project context.")
-@click.option("--stream/--no-stream", default=None,
-              help="Stream the answer as it arrives (default: on in an interactive terminal).")
+@click.option("--stream", is_flag=True, help="Stream the API response as it arrives.")
 @click.option("--markdown/--no-markdown", default=True,
               help="Render Markdown (code blocks, bold, lists). Enabled by default.")
 @click.option("--plain", is_flag=True,
@@ -190,7 +186,7 @@ def _read_multi_line() -> str:
 @click.option("--caveman", is_flag=True,
               help="Answer in telegraphic style to cut output tokens (also /caveman).")
 def chat(message: str | None, project: str | None, no_rag: bool,
-          stream: bool | None, markdown: bool, plain: bool, do_index: bool,
+          stream: bool, markdown: bool, plain: bool, do_index: bool,
           caveman: bool) -> None:
     """Start an interactive chat session, or answer a single message."""
     engine = CoreEngine()
@@ -219,12 +215,8 @@ def _auto_index(engine: CoreEngine, target: str) -> None:
         return
 
     try:
-        if ui.is_interactive():
-            with ui.index_progress() as reporter:
-                stats = engine.index_project(target, on_event=reporter.emit)
-        else:
-            ui.info(f"no index yet; indexing {target} ...")
-            stats = engine.index_project(target)
+        ui.info(f"no index yet; indexing {target} ...")
+        stats = engine.index_project(target)
         ui.success(stats.summary())
     except (OSError, ValueError) as exc:
         ui.warn(f"indexing skipped: {exc}")
@@ -243,127 +235,23 @@ def _print_retrieval(result) -> None:
         return
     ui.info(f"retrieved {len(result.snippets)} snippet(s) in {result.duration:.2f}s")
     for snippet in result.snippets:
-        if ui.is_interactive():
-            _print_snippet(snippet)
-        else:
-            ui.highlight_snippet(snippet)
+        ui.highlight_snippet(snippet)
 
 
-def _print_snippet(snippet, max_lines: int = 12) -> None:
-    """A retrieved snippet as a syntax-highlighted panel (interactive only)."""
-    lines = snippet.content.rstrip("\n").splitlines()
-    body = "\n".join(lines[:max_lines])
-    note = "" if len(lines) <= max_lines else \
-        f"... (+{len(lines) - max_lines} more lines)"
-    ui.snippet_panel(
-        f"context {snippet.path}:{snippet.start_line}-{snippet.end_line}",
-        render.highlight_code(body, render.language_for_path(snippet.path)),
-        note=note,
-    )
-
-
-class _AnswerStream:
-    """Prints an answer while it streams, blocking to paragraph boundaries.
-
-    Markdown mode reuses ``render.MarkdownStream`` so a fragment is only shown
-    once it renders cleanly; plain mode writes each delta straight through.
-    """
-
-    def __init__(self, *, plain: bool, markdown: bool, before_first=None) -> None:
-        self._markdown = render.MarkdownStream() if markdown and not plain else None
-        self._before_first = before_first
-        self.emitted = False
-        self._last = ""
-
-    def _write(self, fragment: str) -> None:
-        sys.stdout.write(fragment)
-        self._last = fragment
-
-    def feed(self, delta: str) -> None:
-        if not self.emitted:
-            self.emitted = True
-            if self._before_first is not None:
-                self._before_first()
-        if self._markdown is None:
-            self._write(delta)
-        else:
-            for fragment in self._markdown.feed(delta):
-                self._write(fragment)
-        sys.stdout.flush()
-
-    def finish(self) -> None:
-        if not self.emitted:
-            return
-        if self._markdown is not None:
-            for fragment in self._markdown.close():
-                self._write(fragment)
-        if not self._last.endswith("\n"):
-            sys.stdout.write("\n")
-        sys.stdout.flush()
-
-
-def _ask_turn(engine: CoreEngine, message: str, *, no_rag: bool,
-              style: str | None, stream: bool | None, plain: bool,
-              markdown: bool, command_output: str = "", before_first=None):
-    """Run one turn, streaming the answer when that is appropriate.
-
-    Returns ``(turn, streamer, retrieval_shown)``. ``streamer`` is ``None``
-    for a whole-answer turn; otherwise ``streamer.emitted`` says whether text
-    was shown (a provider without streaming support returns the answer whole).
-    ``retrieval_shown`` reports whether snippets were already printed while
-    generation was still pending.
-    """
-    streaming = stream if stream is not None else ui.is_interactive()
-    if not streaming:
-        with ui.thinking():
-            turn = engine.ask(message, stream=False, skip_retrieval=no_rag,
-                              style=style, command_output=command_output)
-        return turn, None, False
-
-    spinner = ui.Spinner().start()
-    streamer = _AnswerStream(plain=plain, markdown=markdown,
-                             before_first=before_first)
-    shown = {"retrieval": False}
-
-    def on_retrieval(result) -> None:
-        if result.snippets:
-            spinner.stop()
-            _print_retrieval(result)
-            shown["retrieval"] = True
-
-    def on_delta(delta: str) -> None:
-        spinner.stop()
-        streamer.feed(delta)
-
-    try:
-        turn = engine.ask(message, stream=False, skip_retrieval=no_rag,
-                          style=style, command_output=command_output,
-                          on_retrieval=on_retrieval, on_delta=on_delta)
-    finally:
-        spinner.stop()
-    return turn, streamer, shown["retrieval"]
-
-
-def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool | None,
+def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool,
                  plain: bool = False, markdown: bool = True,
                  style: str | None = None) -> None:
     ui.heading(f"nusa-rg {__version__}")
     try:
-        turn, streamer, retrieval_shown = _ask_turn(
-            engine, message, no_rag=no_rag, style=style, stream=stream,
-            plain=plain, markdown=markdown, before_first=print,
-        )
+        with ui.thinking():
+            turn = engine.ask(message, stream=stream, skip_retrieval=no_rag,
+                              style=style)
     except LLMError as exc:
         ui.error(str(exc))
-        engine.close()
         return
-    if streamer is not None and streamer.emitted:
-        streamer.finish()
-    else:
-        if not retrieval_shown:
-            _print_retrieval(turn.retrieval)
-        print()
-        _emit(turn.answer, plain=plain, markdown=markdown)
+    _print_retrieval(turn.retrieval)
+    print()
+    _emit(turn.answer, plain=plain, markdown=markdown)
     engine.close()
 
 
@@ -425,7 +313,7 @@ def _toggle_style(settings: Config, command: str, current: str | None) -> str:
     return chosen
 
 
-def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool | None,
+def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       plain: bool = False, markdown: bool = True,
                       style: str | None = None) -> None:
     ui.banner()
@@ -485,11 +373,10 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool | None,
             raw = raw[:-1] + "\n" + _read_multi_line()
 
         try:
-            turn, streamer, retrieval_shown = _ask_turn(
-                engine, raw, no_rag=no_rag, style=session_style, stream=stream,
-                plain=plain, markdown=markdown, command_output=pending_command,
-                before_first=lambda: print(ui.assistant_prompt()),
-            )
+            with ui.thinking():
+                turn = engine.ask(raw, stream=stream, skip_retrieval=no_rag,
+                                  style=session_style,
+                                  command_output=pending_command)
         except LLMError as exc:
             ui.error(str(exc))
             continue
@@ -499,13 +386,9 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool | None,
             continue
 
         pending_command = ""
-        if streamer is not None and streamer.emitted:
-            streamer.finish()
-        else:
-            if not retrieval_shown:
-                _print_retrieval(turn.retrieval)
-            print(ui.assistant_prompt())
-            _emit(turn.answer, plain=plain, markdown=markdown)
+        _print_retrieval(turn.retrieval)
+        print(ui.assistant_prompt())
+        _emit(turn.answer, plain=plain, markdown=markdown)
         if turn.response.used_fallback:
             ui.info(f"answered via fallback provider: {turn.response.provider}")
         usage = turn.response.usage
@@ -526,14 +409,13 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool | None,
               help="Seconds before the command is stopped (default: command_timeout).")
 @click.option("--project", "-p", default=None, help="Project directory to index first.")
 @click.option("--no-rag", is_flag=True, help="Answer without retrieving project context.")
-@click.option("--stream/--no-stream", default=None,
-              help="Stream the answer as it arrives (default: on in an interactive terminal).")
+@click.option("--stream", is_flag=True, help="Stream the answer as it arrives.")
 @click.option("--caveman", is_flag=True, help="Answer in telegraphic style.")
 @click.option("--plain", is_flag=True, help="Print the raw Markdown answer.")
 @click.option("--markdown/--no-markdown", default=True, help="Render Markdown.")
 def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
             timeout: int | None, project: str | None, no_rag: bool,
-            stream: bool | None, caveman: bool, plain: bool, markdown: bool) -> None:
+            stream: bool, caveman: bool, plain: bool, markdown: bool) -> None:
     """Run a terminal command (through rtk when installed).
 
     \b
@@ -581,23 +463,17 @@ def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
     if target and not no_rag:
         _auto_index(engine, target)
     try:
-        turn, streamer, retrieval_shown = _ask_turn(
-            engine, question, no_rag=no_rag,
-            style="caveman" if caveman else None, stream=stream,
-            plain=plain, markdown=markdown,
-            command_output=result.for_prompt(), before_first=print,
-        )
+        with ui.thinking():
+            turn = engine.ask(question, stream=stream, skip_retrieval=no_rag,
+                              style="caveman" if caveman else None,
+                              command_output=result.for_prompt())
     except LLMError as exc:
         ui.error(str(exc))
         engine.close()
         sys.exit(1)
-    if streamer is not None and streamer.emitted:
-        streamer.finish()
-    else:
-        if not retrieval_shown:
-            _print_retrieval(turn.retrieval)
-        print()
-        _emit(turn.answer, plain=plain, markdown=markdown)
+    _print_retrieval(turn.retrieval)
+    print()
+    _emit(turn.answer, plain=plain, markdown=markdown)
     engine.close()
 
 
@@ -612,8 +488,7 @@ def index(path: str | None, force: bool, set_default: bool, as_json: bool) -> No
     """Scan and index a project directory into the local SQLite FTS5 store."""
     engine = CoreEngine()
     try:
-        with ui.index_progress() as reporter:
-            stats = engine.index_project(path, force=force, on_event=reporter.emit)
+        stats = engine.index_project(path, force=force)
     except FileNotFoundError as exc:
         ui.error(str(exc))
         sys.exit(1)
@@ -639,7 +514,14 @@ def index(path: str | None, force: bool, set_default: bool, as_json: bool) -> No
         }, indent=2))
         return
 
-    ui.index_summary(stats)
+    ui.heading("Index complete")
+    print(f"  root      {stats.root}")
+    print(f"  scanned   {stats.scanned} file(s)")
+    print(f"  indexed   {stats.files_indexed}")
+    print(f"  unchanged {stats.files_unchanged}")
+    print(f"  removed   {stats.files_removed}")
+    print(f"  chunks    {stats.chunks}")
+    print(f"  duration  {stats.duration:.2f}s")
     engine.close()
 
 
@@ -661,11 +543,11 @@ def config_show(reveal: bool) -> None:
         data["api_key"] = settings.get("api_key", "") or "(unset)"
 
     ui.heading(f"Configuration ({settings._path})")
-    ui.key_values(
-        [(key, data[key]) for key in sorted(data)],
-        label_width=28,
-        truncate=72,
-    )
+    for key in sorted(data):
+        value = data[key]
+        if isinstance(value, str) and len(value) > 72:
+            value = value[:69] + "..."
+        print(f"  {ui.paint(key, ui.BOLD):<28} {value}")
     ui.info(f"state directory: {paths.base_dir()}")
 
 
@@ -802,14 +684,15 @@ def _validate_fallbacks(value: str) -> None:
 def config_path_cmd() -> None:
     """Print the resolved paths of the state directory."""
     ui.heading("Paths")
-    ui.key_values([
+    for label, value in (
         ("config", paths.config_path()),
         ("index", paths.index_db_path()),
         ("keystore", paths.keystore_path()),
         ("catalog", paths.catalog_path()),
         ("log", paths.app_log_path()),
         ("audit", paths.audit_log_path()),
-    ], label_width=10)
+    ):
+        print(f"  {ui.paint(label, ui.BOLD):<10} {value}")
 
 
 # ----------------------------------------------------------------- providers
@@ -840,21 +723,10 @@ def providers_list(search: str, show_all: bool, limit: int) -> None:
     ui.info(f"snapshot: {catalogue.fetched_at or 'bundled'} | "
             f"{models} models in total")
     rows = catalogue.search(search, compatible_only=not show_all)
-    if ui.is_interactive():
-        ui.data_table(["", "id", "name", "models"], [
-            [
-                ("●", "nusa.mint") if entry.selectable else ("○", "dim"),
-                (entry.id, "bold"),
-                entry.name,
-                str(entry.model_count),
-            ]
-            for entry in rows[:limit]
-        ])
-    else:
-        for entry in rows[:limit]:
-            mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
-            print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', ui.BOLD)}"
-                  f"{entry.name[:30]:<32}{entry.model_count:>5} models")
+    for entry in rows[:limit]:
+        mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
+        print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', ui.BOLD)}"
+              f"{entry.name[:30]:<32}{entry.model_count:>5} models")
     if len(rows) > limit:
         ui.info(f"... {len(rows) - limit} more; raise --limit or narrow --search")
     if not rows:
@@ -872,18 +744,15 @@ def providers_show(provider_id: str) -> None:
                  "Try: nusa-rg providers list --search <text>")
         sys.exit(1)
     ui.heading(provider.name)
-    rows = [
-        ("id", provider.id),
-        ("endpoint", provider.api or "(not published - set api_base_url)"),
-        ("key", ", ".join(provider.env) or "(none listed)"),
-        ("models", provider.model_count),
-        ("default", provider.default_model or "(none picked)"),
-    ]
+    print(f"  id          {provider.id}")
+    print(f"  endpoint    {provider.api or '(not published - set api_base_url)'}")
+    print(f"  key         {', '.join(provider.env) or '(none listed)'}")
+    print(f"  models      {provider.model_count}")
+    print(f"  default     {provider.default_model or '(none picked)'}")
     if provider.doc:
-        rows.append(("docs", provider.doc))
-    rows.append(("compatible",
-                 ("yes", "nusa.ok") if provider.selectable else ("no", "nusa.warn")))
-    ui.key_values(rows, label_width=10)
+        print(f"  docs        {provider.doc}")
+    ready = ui.paint("yes", ui.GREEN) if provider.selectable else ui.paint("no", ui.YELLOW)
+    print(f"  compatible  {ready}")
     if not provider.selectable:
         ui.warn("this endpoint is not OpenAI chat-completions; nusa-rg "
                 "cannot call it directly")
@@ -904,7 +773,6 @@ def providers_models(provider_id: str, search: str, limit: int) -> None:
         sys.exit(1)
     rows = catalogue.models(provider_id, search)
     ui.heading(f"{provider.name} - {len(rows)} model(s)")
-    table_rows = []
     for model_id, model in rows[:limit]:
         context = model.get("context")
         context_text = f"{context // 1000}k" if isinstance(context, int) and context else "?"
@@ -912,14 +780,10 @@ def providers_models(provider_id: str, search: str, limit: int) -> None:
         if isinstance(cost_in, (int, float)) or isinstance(cost_out, (int, float)):
             left = cost_in if isinstance(cost_in, (int, float)) else "?"
             right = cost_out if isinstance(cost_out, (int, float)) else "?"
-            cost_text = f"${left}/${right} per M tokens"
+            cost_text = f"${left}/{right} per M tokens"
         else:
             cost_text = ""
-        table_rows.append([(model_id, "bold"), context_text, (cost_text, "dim")])
-    ui.data_table(["id", "context", "cost"], table_rows,
-                  aligns=["left", "right", "left"],
-                  no_wrap=[False, True, True],
-                  overflow=["fold", "ellipsis", "ellipsis"])
+        print(f"  {ui.paint(f'{model_id:<46}', ui.BOLD)}{context_text:>8}  {cost_text}")
     if len(rows) > limit:
         ui.info(f"... {len(rows) - limit} more; raise --limit or narrow --search")
 
@@ -976,12 +840,10 @@ def update(check_only: bool, force: bool, no_install: bool, yes: bool) -> None:
         ui.info(f"note: {note}")
 
     ui.heading("Check for updates")
-    ui.key_values([
-        ("installed", info.installed_version),
-        ("latest", info.remote_version or "unknown"),
-        ("checkout", info.source_dir),
-        ("branch", info.branch or "unknown"),
-    ], label_width=10)
+    print(f"  installed  {info.installed_version}")
+    print(f"  latest     {info.remote_version or 'unknown'}")
+    print(f"  checkout   {info.source_dir}")
+    print(f"  branch     {info.branch or 'unknown'}")
 
     if info.remote_version is None:
         ui.error(info.detail or "could not reach the remote")
@@ -1041,30 +903,27 @@ def status() -> None:
     ui.heading("Status")
     provider_id = str(settings.get("api_provider") or "")
     provider = settings.get("model_provider")
+    print(f"  provider  {provider}" + (f" ({provider_id})" if provider_id else ""))
+    print(f"  model     {settings.get('api_model')}")
+    print(f"  base url  {settings.provider_base_url()}")
     key_state = "set" if settings.api_key_for(provider_id) else "not set"
+    print(f"  api key   {key_state}" +
+          (" (keystore/encrypted)" if key_state == "set" else ""))
     style = str(settings.get("response_style", "default") or "default")
-    rows = [
-        ("provider", f"{provider}" + (f" ({provider_id})" if provider_id else "")),
-        ("model", settings.get("api_model")),
-        ("base url", settings.provider_base_url()),
-        ("api key", key_state +
-         (" (keystore/encrypted)" if key_state == "set" else "")),
-        ("style", style_mod.describe(style)),
-    ]
+    print(f"  style     {style_mod.describe(style)}")
     entries = settings.fallback_entries()
     if entries:
         chain = " -> ".join(pid + (f":{model}" if model else "") for pid, model in entries)
-        rows.append(("fallback", f"{provider_id or provider} -> {chain}"))
+        print(f"  fallback  {provider_id or provider} -> {chain}")
 
     try:
         with ProjectIndex() as idx:
             root = idx.project_root
             files, chunks = idx.count()
-        rows.append(("index", f"{files} file(s), {chunks} chunk(s)"))
-        rows.append(("root", root or "(none)"))
+        print(f"  index     {files} file(s), {chunks} chunk(s)")
+        print(f"  root      {root or '(none)'}")
     except Exception as exc:  # noqa: BLE001
-        rows.append(("index", f"unavailable ({exc})"))
-    ui.key_values(rows, label_width=10)
+        print(f"  index     unavailable ({exc})")
 
     engine = CoreEngine(settings)
     try:
@@ -1073,11 +932,7 @@ def status() -> None:
         ok, message = False, str(exc)
     engine.close()
 
-    if ui.is_interactive():
-        ui.key_values([("llm", (message, "nusa.ok" if ok else "nusa.warn"))],
-                      label_width=10)
-    else:
-        (ui.success if ok else ui.warn)(f"  llm       {message}")
+    (ui.success if ok else ui.warn)(f"  llm       {message}")
     log_event("status", level="INFO" if ok else "WARN", llm_ok=ok)
 
 
@@ -1089,16 +944,16 @@ def doctor() -> None:
     import sqlite3
 
     ok = True
-    rows: list[tuple[str, str, str, str]] = []
 
     def check(label: str, passed: bool, detail: str = "") -> None:
         nonlocal ok
         ok = ok and passed
-        rows.append(("PASS" if passed else "FAIL",
-                     "nusa.ok" if passed else "nusa.error", label, detail))
+        mark = ui.paint("PASS", ui.GREEN) if passed else ui.paint("FAIL", ui.RED)
+        print(f"  [{mark}] {label}" + (f" - {detail}" if detail else ""))
 
     def note(label: str, detail: str = "") -> None:
-        rows.append(("INFO", "dim", label, detail))
+        mark = ui.paint("INFO", ui.GREY)
+        print(f"  [{mark}] {label}" + (f" - {detail}" if detail else ""))
 
     check("python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0])
     check("platform", True, f"{sys.platform}")
@@ -1169,8 +1024,6 @@ def doctor() -> None:
         elif not settings.api_key_for(provider_id):
             note(f"fallback '{provider_id}'", "no key stored and no env var set; "
                                               "it will be skipped")
-
-    ui.check_rows(rows)
 
     ui.info("")
     ui.success("all checks passed") if ok else ui.warn("some checks failed")

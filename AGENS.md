@@ -246,21 +246,6 @@ Interaksi pengguna dirancang untuk meminimalkan hambatan (friction) dengan meman
     *   Perintah `nusa-rg --help` atau `-h` harus menampilkan dokumentasi singkat mengenai sintaks perintah, contoh penggunaan, dan daftar flag yang tersedia.
     *   **AC-39**: Dokumentasi help mencakup contoh perintah lengkap seperti `nusa-rg index /home/project/my-app`.
 
-*   **FR-17: Lapisan Tampilan Rich**
-    *   Di terminal interaktif, tampilan memakai pustaka `rich`: spinner bintang emas saat menunggu, progress bar dua fase (scan lalu indeks) untuk `nusa-rg index`, tabel dan panel untuk `status`, `doctor`, `providers`, `config show/path`, dan ringkasan indeks, serta panel snippet konteks yang diwarnai sesuai bahasa file.
-    *   Output yang dipipe, `--no-colour`, atau `NO_COLOR` tetap memakai jalur teks polos yang lama.
-    *   **AC-42**: Warna dan animasi hanya aktif di terminal interaktif; output pipa tidak mengandung escape sequence.
-
-*   **FR-18: Streaming Jawaban**
-    *   Jawaban LLM tampil bertahap per paragraf saat provider mendukung streaming (endpoint OpenAI-compatible). Default aktif di terminal interaktif, bisa dipaksa dengan `--stream` dan dimatikan dengan `--no-stream`.
-    *   Provider tanpa streaming (jalur lokal llama.cpp) jatuh ke mode jawaban utuh tanpa error.
-    *   **AC-43**: Teks yang tampil dari streaming memiliki isi yang sama dengan mode utuh, dan retrieval tampil sebelum jawaban mulai mengalir.
-
-*   **FR-19: Animasi Pembuka Banner**
-    *   Banner emblem digambar baris demi baris lalu mengedipkan bintang sekali saat dibuka di terminal interaktif UTF-8.
-    *   `NUSA_RG_NO_ANIM=1`, output pipa, atau `--no-colour` melewati animasi dan langsung mencetak banner statis.
-    *   **AC-44**: Animasi selesai di bawah 1 detik; Ctrl-C melewatinya tanpa keluar dari aplikasi.
-
 ## Kriteria Penerimaan
 
 Kriteria ini menjadi standar absolut untuk menentukan apakah fitur telah selesai dikembangkan dan layak untuk dirilis ke tahap produksi.

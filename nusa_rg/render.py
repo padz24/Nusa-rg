@@ -1083,39 +1083,6 @@ def render_html(document: str, width: int | None = None) -> str:
         return document
 
 
-class MarkdownStream:
-    """Push-based :func:`stream_markdown`: ``feed()`` returns printable pieces.
-
-    The chat loop receives deltas through a callback rather than pulling from an
-    iterator, so the buffering rule lives here; it is identical to the one
-    ``stream_markdown`` has always used, which keeps both paths rendering the
-    same bytes.
-    """
-
-    def __init__(self, renderer=render_markdown):
-        self._render = renderer
-        self._buffer: list[str] = []
-
-    def feed(self, chunk: str) -> list[str]:
-        out: list[str] = []
-        self._buffer.extend(chunk.split("\n"))
-        while self._buffer and self._buffer[-1] == "":
-            self._buffer.pop()
-            if self._buffer:
-                out.append(self._render("\n".join(self._buffer)) + "\n\n")
-            else:
-                out.append("\n")
-        return out
-
-    def close(self) -> list[str]:
-        """Flush whatever is left (a stream can end without a blank line)."""
-        if not self._buffer:
-            return []
-        fragment = self._render("\n".join(self._buffer))
-        self._buffer = []
-        return [fragment]
-
-
 def stream_markdown(chunks: Iterable[str]) -> Iterator[str]:
     """Yield rendered fragments as Markdown arrives.
 
@@ -1125,26 +1092,19 @@ def stream_markdown(chunks: Iterable[str]) -> Iterator[str]:
     stray backticks. Buffering still gives the reader output as soon as each
     paragraph or table is complete.
     """
-    stream = MarkdownStream()
+    buffer: list[str] = []
+
     for chunk in chunks:
-        yield from stream.feed(chunk)
-    yield from stream.close()
+        buffer.extend(chunk.split("\n"))
+        while buffer and buffer[-1] == "":
+            buffer.pop()
+            if buffer:
+                yield render_markdown("\n".join(buffer)) + "\n\n"
+            else:
+                yield "\n"
 
-
-def language_for_path(path: str) -> str:
-    """Best-effort language hint from a file extension, for snippet colouring.
-
-    Unknown extensions return an empty string, which makes ``highlight_code``
-    pass the text through unchanged rather than guessing.
-    """
-    name = path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    if not extension:
-        return ""
-    normalised = LANGUAGE_ALIASES.get(extension, extension)
-    if normalised in _COMMENT_STYLES or normalised in ("diff", "log"):
-        return normalised
-    return ""
+    if buffer:
+        yield render_markdown("\n".join(buffer))
 
 
 def has_markdown(text: str) -> bool:
@@ -1233,12 +1193,10 @@ __all__ = [
     "render_markdown",
     "render_html",
     "stream_markdown",
-    "MarkdownStream",
     "highlight_code",
     "render_code_block",
     "has_markdown",
     "strip_markdown",
-    "language_for_path",
     "EMOJI",
     "LANGUAGE_ALIASES",
     "MARKDOWN2_EXTRAS",

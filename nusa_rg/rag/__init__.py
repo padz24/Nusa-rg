@@ -5,7 +5,7 @@ Pipeline order matches AGENS.md section 8:
 """
 
 from .composer import ComposedPrompt, compose, format_context
-from .index import IndexEvent, IndexStats, ProjectIndex, chunk_lines
+from .index import IndexStats, ProjectIndex, chunk_lines
 from .retriever import RetrievalResult, Snippet, retrieve
 from .scanner import ScanResult, ScannedFile, scan
 
@@ -13,7 +13,6 @@ __all__ = [
     "ComposedPrompt",
     "compose",
     "format_context",
-    "IndexEvent",
     "IndexStats",
     "ProjectIndex",
     "chunk_lines",

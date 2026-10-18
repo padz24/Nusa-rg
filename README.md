@@ -90,9 +90,8 @@ nusa-rg chat "explain this traceback"     # one-shot
 | `nusa-rg doctor` | Installation and security self-checks |
 
 Useful flags: `--json` on `index`, `--no-rag` on `chat`, `--project/-p`,
-`--stream/--no-stream` on `chat` and `run` (streaming is on by default in an
-interactive terminal), `--force` on `index`, `--reveal` on `config show`,
-`--caveman` on `chat` and `run`, `--raw` on `run`.
+`--stream`, `--force` on `index`, `--reveal` on `config show`, `--caveman` on
+`chat` and `run`, `--raw` on `run`.
 
 ## Providers
 
@@ -342,25 +341,6 @@ renderer, table layout and truncation, syntax colouring, and the four constructs
 markdown2 omits (subscript, superscript, `==highlight==`, emoji shortcodes),
 applied only outside code regions.
 
-### Terminal chrome
-
-The interactive layer is built on [Rich](https://rich.readthedocs.io/), chosen
-for the same reason as `markdown2`: a pure-Python wheel that installs on Termux
-without compiling. The "Thinking..." status is a gold star spinner, `nusa-rg
-index` shows a two-phase progress bar (scan, then files) and a summary panel,
-and `status`, `doctor`, `providers`, and `config` print as aligned tables.
-Retrieved snippets appear in a bordered panel with the code highlighted for the
-file's language.
-
-Answers stream by default when the terminal is interactive: the provider's
-deltas are rendered paragraph by paragraph, so the first lines appear while the
-rest is still generating. `--no-stream` waits for the whole answer; providers
-without streaming (the llama.cpp path) fall back to it automatically.
-
-Piping the output, `NO_COLOR`, or `--no-colour` turns all of this off — those
-paths keep the original plain text. The banner draws itself row by row once per
-session; `NUSA_RG_NO_ANIM=1` skips that and prints it in one piece.
-
 ## Updating
 
 ```bash
@@ -421,8 +401,7 @@ State lives in one directory:
     └── audit.log      # config changes and index operations
 ```
 
-Set `NUSA_RG_HOME` to relocate everything, and `NUSA_RG_NO_ANIM=1` to skip the
-banner intro animation.
+Set `NUSA_RG_HOME` to relocate everything.
 
 ## Architecture
 
