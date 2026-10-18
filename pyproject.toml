@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "termux-rag-assist"
-version = "1.0.0"
+version = "1.3.0"
 description = "Coding assistant CLI for Termux with local-project RAG over SQLite FTS5"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,6 +35,9 @@ rag-assist = "ragassist.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["ragassist*"]
+
+[tool.setuptools.package-data]
+ragassist = ["data/*.json.gz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import Config
 from . import llm
+from . import style as style_mod
 from .llm.base import LLMResponse
 from .logging_setup import audit, log_event
 from .rag import ComposedPrompt, ProjectIndex, RetrievalResult, compose, retrieve
@@ -86,11 +87,14 @@ class CoreEngine:
 
     # -------------------------------------------------------------- chat
     def ask(self, query: str, *, stream: bool = False,
-            skip_retrieval: bool = False) -> TurnResult:
+            skip_retrieval: bool = False, style: str | None = None,
+            command_output: str = "") -> TurnResult:
         """Run one full turn: retrieve -> compose -> generate (FR-10).
 
         Retrieval is skipped automatically when no project has been indexed, so
-        a fresh install can still answer general questions.
+        a fresh install can still answer general questions. ``style`` overrides
+        the configured ``response_style`` for this turn; ``command_output`` is
+        terminal output the user captured with ``!command``.
         """
         retrieval = RetrievalResult(query=query)
         if not skip_retrieval:
@@ -106,10 +110,14 @@ class CoreEngine:
                 log_event("retrieve", query=query, hits=len(retrieval.snippets),
                           duration=f"{retrieval.duration:.3f}")
 
+        base_system = str(self.config.get("system_prompt", "") or "")
+        effective_style = style or str(
+            self.config.get("response_style", "default") or "default")
         prompt = compose(
             query,
-            system_prompt=str(self.config.get("system_prompt", "") or ""),
+            system_prompt=style_mod.apply(base_system, effective_style),
             retrieval=retrieval,
+            command_output=command_output,
         )
 
         # Resolved through the module so an alternative client can be

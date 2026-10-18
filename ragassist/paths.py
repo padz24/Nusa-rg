@@ -39,6 +39,11 @@ def keystore_path() -> Path:
     return base_dir() / "keystore.bin"
 
 
+def catalog_path() -> Path:
+    """Refreshed provider catalogue; the bundled snapshot is used without it."""
+    return base_dir() / "catalog.json"
+
+
 def log_dir() -> Path:
     return base_dir() / "logs"
 

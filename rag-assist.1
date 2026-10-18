@@ -1,4 +1,4 @@
-.TH RAG\-ASSIST 1 "2026-10-18" "termux-rag-assist 1.0.0" "User Commands"
+.TH RAG\-ASSIST 1 "2026-10-18" "termux-rag-assist 1.3.0" "User Commands"
 .SH NAME
 rag\-assist \- coding assistant for Termux with local\-project RAG
 .SH SYNOPSIS
@@ -22,11 +22,17 @@ Inside a session,
 .BR /exit ,
 .BR /quit ,
 .BR /clear ,
+.BR "/caveman [on|off]" ,
 and
 .B /help
 are recognised, and Ctrl+D ends the session. End a line with
 .B \\\\
-to continue a multi\-line block terminated by a blank line.
+to continue a multi\-line block terminated by a blank line. A line beginning
+with
+.B !
+runs a terminal command (through
+.B rtk
+when installed) and keeps its output as context for the next question.
 .br
 Options:
 .BR \-p ", " \-\-project " \fIPATH\fR"
@@ -35,7 +41,42 @@ skip retrieval;
 .B \-\-stream
 stream the API response;
 .B \-\-index " / " \-\-no\-index
-control automatic indexing.
+control automatic indexing;
+.B \-\-caveman
+answer in telegraphic style for this session;
+.B \-\-plain
+print raw Markdown.
+.TP
+.B run [options] \fICOMMAND\fR [\fIARG\fR ...]
+Run a terminal command. When
+.B rtk
+(Rust Token Killer) is on the PATH the command is sent through it as
+.IB rtk " COMMAND" ,
+and rtk rewrites the output before it reaches the model; the output is capped
+in bytes either way. The command line is never passed through a shell, and
+shell operators are rejected with an explanation.
+.br
+Options:
+.BR \-a ", " \-\-ask " \fIQUESTION\fR"
+answer
+.I QUESTION
+with the command output attached as context;
+.B \-\-raw
+do not route the command through rtk;
+.B \-\-timeout \fISECONDS\fR
+override
+.B command_timeout
+for this run;
+.BR \-p ", " \-\-project " \fIPATH\fR" ","
+.BR \-\-no\-rag ", "
+.BR \-\-stream ", "
+.BR \-\-caveman ", "
+.BR \-\-plain
+as for
+.BR chat .
+The exit code is the command's own, so
+.B run
+composes with scripts.
 .TP
 .B index [\fIPATH\fR] [options]
 Scan a project directory and write the chunks to the FTS5 index. The path
@@ -56,18 +97,48 @@ Print the active configuration.
 .B \-\-reveal
 decrypts the API key; treat the output as sensitive.
 .TQ
-.B config set \fIKEY\fR [\fIVALUE\fR] [\-\-secret]
+.B config set \fIKEY\fR [\fIVALUE\fR] [\-\-secret] [\-\-provider \fIPROVIDER\fR]
 Set a value. Credential fields are stored encrypted.
 .B \-\-secret
-without a value prompts without echoing. Special keys:
+without a value prompts without echoing.
+.B \-\-provider
+stores
+.B api_key
+for one catalogue provider instead of the default slot.
+Special keys:
 .B provider
 (accepts
-.IR external ", " local ", " openai ", " groq ),
+.IR external ", " local ,
+or any catalogue id),
+.BR fallback_providers " (a comma\-separated list of \fIid\fR or \fIid:model\fR entries),"
+.BR response_style " ("
+.IR default " or " caveman ),
 and
 .BR api_key .
 .TQ
 .B config path
 Print the resolved path of every state file.
+.TP
+.B providers \fISUBCOMMAND\fR
+.TQ
+.B providers list [\fB\-\-search\fR \fITEXT\fR] [\fB\-\-all\fR] [\fB\-\-limit\fR \fIN\fR]
+List the bundled catalogue of 200+ providers with their model counts. Only
+OpenAI chat\-completions compatible providers are shown unless
+.B \-\-all
+is given; the others are listed for their key names and documentation but
+cannot be called directly.
+.TQ
+.B providers show \fIPROVIDER\fR
+Print one provider's endpoint, key environment variable, model count, and
+default model, plus the command that switches to it.
+.TQ
+.B providers models \fIPROVIDER\fR [\fB\-\-search\fR \fITEXT\fR] [\fB\-\-limit\fR \fIN\fR]
+List the models a provider hosts, newest first, with context size and price
+per million tokens when the catalogue knows them.
+.TQ
+.B providers refresh [\fB\-\-url\fR \fIURL\fR] [\fB\-\-timeout\fR \fISECONDS\fR]
+Fetch a fresh catalogue (default: the models.dev registry) into the state
+directory, replacing the bundled snapshot.
 .TP
 .B update [\fB\-\-check\fR] [\fB\-\-force\fR] [\fB\-\-no\-install\fR] [\fB\-\-yes\fR]
 Update a source checkout to the latest release and re\-run the installer.
@@ -82,10 +153,14 @@ mirror. A dirty tree or a diverged branch stops the update unless
 \fB\-\-force\fR is given.
 .TP
 .B status
-Report the provider, the index size, and a connectivity check.
+Report the provider, model, response style, fallback chain, index size, and a
+connectivity check.
 .TP
 .B doctor
-Run installation and security self\-checks. Exits non\-zero if any fail.
+Run installation and security self\-checks, including whether
+.B rtk
+is available and whether the provider catalogue loads. Exits non\-zero if any
+fail.
 .SH OPTIONS
 .TP
 .BR \-v ", " \-\-verbose
@@ -108,6 +183,14 @@ Override the state directory. Default
 .TP
 .B NO_COLOR
 When set, disables all ANSI colour output.
+.TP
+.B GROQ_API_KEY, OPENAI_API_KEY, ...
+Keys for catalogue providers are read from the environment variables models.dev
+lists (shown by
+.BR "rag\-assist providers show \fIPROVIDER\fR" ),
+after the per\-provider keystore entry and before the shared
+.B api_key
+slot.
 .SH FILES
 .TP
 .I ~/.rag\-assist/config.yaml
@@ -121,6 +204,11 @@ AES\-256\-GCM sealed credentials.
 .I ~/.rag\-assist/index.db
 SQLite FTS5 project index. Mode 0600.
 .TP
+.I ~/.rag\-assist/catalog.json
+Provider catalogue written by
+.BR "rag\-assist providers refresh" .
+Optional; when present it overrides the bundled snapshot. Mode 0600.
+.TP
 .I ~/.rag\-assist/logs/app.log
 Operational log. Metadata only, mode 0600, rotated at 10 MB keeping 5 archives.
 .TP
@@ -130,9 +218,16 @@ Audit trail for configuration changes and index operations.
 API keys are encrypted with AES\-256\-GCM and never written to
 .I config.yaml
 or to any log. Log entries record timestamps, levels, event names, and a
-SHA\-256 fingerprint of queries rather than query text or code. User input is
-never passed through a shell, and control markers found in indexed files are
-neutralised before they can reach a prompt.
+SHA\-256 fingerprint of queries rather than query text or code. Terminal
+commands execute only when typed with
+.B run
+or
+.BR !command ;
+the command line is split into an argument list and never passed through a
+shell, shell operators are rejected, and the output is byte\-capped,
+delimited, and sanitised before it can reach a prompt. Control markers found
+in indexed files or command output are neutralised before they can reach a
+prompt.
 .SH EXAMPLES
 .TP
 .B rag\-assist index ~/projects/my\-app
@@ -143,6 +238,21 @@ Start an interactive session.
 .TP
 .B rag\-assist chat "explain this traceback"
 Answer a single question.
+.TP
+.B rag\-assist providers list
+Browse the bundled provider catalogue.
+.TP
+.B rag\-assist config set provider deepseek
+Switch to a catalogue provider; its default model is applied too.
+.TP
+.B rag\-assist config set api_key \-\-provider groq \-\-secret
+Store a key for one provider.
+.TP
+.B rag\-assist run \-\-ask "what broke?" pytest \-x
+Run a command and ask about its output.
+.TP
+.B rag\-assist chat \-\-caveman
+Start a session that answers in telegraphic style to save output tokens.
 .TP
 .B rag\-assist config set provider local
 Switch to the offline llama.cpp path.

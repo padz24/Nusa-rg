@@ -34,7 +34,9 @@ _ROLE_MARKER_RE = re.compile(
 # Delimiters used by our own prompt composer; if untrusted text contains them it
 # could forge the end of the context block. Both the opening and closing forms
 # must be matched, since the composer emits "<|/RAG_CONTEXT|>".
-_DELIMITER_RE = re.compile(r"<\|/?RAG_(?:CONTEXT|USER|END)\|>", re.IGNORECASE)
+_DELIMITER_RE = re.compile(
+    r"<\|/?RAG_(?:CONTEXT|COMMAND|USER|END)\|>", re.IGNORECASE
+)
 
 # Instruction-override phrasing common to prompt-injection payloads.
 _INJECTION_RE = re.compile(

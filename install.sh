@@ -219,6 +219,10 @@ Next steps:
   2. Index your project:     rag-assist index ~/projects/my-app
   3. Start chatting:         rag-assist chat
   4. Verify the install:     rag-assist doctor
+
+Optional:
+  - Browse the provider catalogue:  rag-assist providers list
+  - Trim command output with rtk:   https://github.com/rtk-ai/rtk
 NEXT
 }
 

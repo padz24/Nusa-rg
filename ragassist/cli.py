@@ -11,8 +11,12 @@ import sys
 import click
 
 from . import __version__, crypto, paths, render, ui
+from . import catalog as catalog_mod
+from . import command as command_mod
+from . import style as style_mod
 from . import update as update_mod
-from .config import Config, ConfigError
+from .command import CommandError
+from .config import Config, ConfigError, PROVIDERS
 from .engine import CoreEngine
 from .llm.base import LLMError
 from .logging_setup import audit, configure, log_event
@@ -28,11 +32,15 @@ Examples:
   rag-assist index ~/projects/my-app       Index a project directory
   rag-assist chat                          Start an interactive session
   rag-assist chat "explain this traceback" One-shot question, then exit
+  rag-assist providers list --search qwen  Browse 200+ provider entries
+  rag-assist config set provider deepseek  Switch provider in one command
+  rag-assist run --ask "why?" pytest -x    Run a command, ask about its output
   rag-assist config show                    Print the current configuration
   rag-assist config set provider local      Switch to the llama.cpp path
   rag-assist status                         Show index and provider state
 
-In chat, type /exit (or Ctrl+D) to quit, and /clear to start a new topic.
+In chat, type /exit (or Ctrl+D) to quit, /clear to start a new topic,
+/caveman to toggle terse answers, and !command to run a terminal command.
 """
 
 
@@ -61,6 +69,7 @@ EXIT_COMMANDS = {"/exit", "/quit", "/q"}
 CLEAR_COMMANDS = {"/clear", "/reset"}
 HELP_COMMANDS = {"/help", "/?"}
 UPDATE_COMMANDS = {"/update", "/upgrade"}
+STYLE_COMMANDS = {"/caveman", "/style"}
 
 
 def _print_chat_help() -> None:
@@ -70,6 +79,8 @@ def _print_chat_help() -> None:
         ("/exit", "leave the session (Ctrl+D works too)"),
         ("/quit", "alias for /exit"),
         ("/clear", "forget the current topic and start over"),
+        ("/caveman [on|off]", "toggle terse answers that save output tokens"),
+        ("!command", "run a terminal command; its output becomes context"),
         ("/help", "show this list"),
         ("/update", "update a source checkout to the latest release"),
     ):
@@ -164,10 +175,14 @@ def _read_multi_line() -> str:
               help="Print the raw Markdown source with no formatting.")
 @click.option("--index/--no-index", "do_index", default=True,
               help="Index the project automatically if it is missing or stale.")
+@click.option("--caveman", is_flag=True,
+              help="Answer in telegraphic style to cut output tokens (also /caveman).")
 def chat(message: str | None, project: str | None, no_rag: bool,
-          stream: bool, markdown: bool, plain: bool, do_index: bool) -> None:
+          stream: bool, markdown: bool, plain: bool, do_index: bool,
+          caveman: bool) -> None:
     """Start an interactive chat session, or answer a single message."""
     engine = CoreEngine()
+    session_style = "caveman" if caveman else None
 
     target = project or engine.config.project_path()
     if target and do_index and not no_rag:
@@ -175,11 +190,11 @@ def chat(message: str | None, project: str | None, no_rag: bool,
 
     if message:
         _single_turn(engine, message, no_rag=no_rag, stream=stream,
-                     plain=plain, markdown=markdown)
+                     plain=plain, markdown=markdown, style=session_style)
         return
 
     _interactive_loop(engine, no_rag=no_rag, stream=stream,
-                      plain=plain, markdown=markdown)
+                      plain=plain, markdown=markdown, style=session_style)
 
 
 def _auto_index(engine: CoreEngine, target: str) -> None:
@@ -216,11 +231,13 @@ def _print_retrieval(result) -> None:
 
 
 def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool,
-                 plain: bool = False, markdown: bool = True) -> None:
+                 plain: bool = False, markdown: bool = True,
+                 style: str | None = None) -> None:
     ui.heading(f"rag-assist {__version__}")
     try:
         with ui.thinking():
-            turn = engine.ask(message, stream=stream, skip_retrieval=no_rag)
+            turn = engine.ask(message, stream=stream, skip_retrieval=no_rag,
+                              style=style)
     except LLMError as exc:
         ui.error(str(exc))
         return
@@ -230,8 +247,67 @@ def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool
     engine.close()
 
 
+def _run_terminal_command(text: str, settings: Config, *, use_rtk: bool | None = None):
+    """Execute a ``!command`` line under the configured limits."""
+    argv = command_mod.split_command(text)
+    if use_rtk is None:
+        use_rtk = bool(settings.get("command_use_rtk", True))
+    return command_mod.run(
+        argv,
+        timeout=int(settings.get("command_timeout", command_mod.DEFAULT_TIMEOUT)
+                    or command_mod.DEFAULT_TIMEOUT),
+        limit=int(settings.get("command_output_limit", command_mod.DEFAULT_LIMIT)
+                  or command_mod.DEFAULT_LIMIT),
+        use_rtk=use_rtk,
+    )
+
+
+def _print_command(result) -> None:
+    """Show a finished command exactly as the model will receive it."""
+    ui.heading(f"$ {result.display}")
+    if result.output:
+        print(result.output)
+    ui.info(result.summary())
+
+
+def _capture_command(settings: Config, text: str) -> str:
+    """Run one ``!command``, print it, and return its prompt block.
+
+    Returns an empty string when nothing was run, so callers can keep any
+    previously captured output.
+    """
+    if not text:
+        ui.info("usage: !<command>   e.g. !git status")
+        return ""
+    try:
+        with ui.thinking("Running command"):
+            result = _run_terminal_command(text, settings)
+    except CommandError as exc:
+        ui.error(str(exc))
+        return ""
+    _print_command(result)
+    ui.info("output kept - your next question will be answered with it")
+    return result.for_prompt()
+
+
+def _toggle_style(settings: Config, command: str, current: str | None) -> str:
+    """Handle ``/caveman [on|off]`` and return the session style to use."""
+    parts = command.split()
+    requested = parts[1] if len(parts) > 1 else ""
+    effective = current or str(settings.get("response_style", "default") or "default")
+    if requested in ("on", "1"):
+        chosen = "caveman"
+    elif requested in ("off", "0"):
+        chosen = "default"
+    else:
+        chosen = "default" if effective == "caveman" else "caveman"
+    ui.info(f"response style: {style_mod.describe(chosen)}")
+    return chosen
+
+
 def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
-                      plain: bool = False, markdown: bool = True) -> None:
+                      plain: bool = False, markdown: bool = True,
+                      style: str | None = None) -> None:
     ui.heading(f"rag-assist {__version__} - type /exit to quit, /help for commands")
     root = engine.config.project_path()
     provider = engine.config.get("model_provider", "external")
@@ -245,6 +321,9 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                     "for context-aware answers")
     except Exception:  # noqa: BLE001 - a broken index must not block chat
         pass
+
+    session_style = style
+    pending_command = ""
 
     while True:
         try:
@@ -263,6 +342,7 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             ui.info("session ended")
             break
         if command in CLEAR_COMMANDS:
+            pending_command = ""
             ui.info("context cleared")
             continue
         if command in HELP_COMMANDS:
@@ -271,13 +351,23 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
         if command in UPDATE_COMMANDS:
             _run_update()
             continue
+        words = command.split()
+        if words and words[0] in STYLE_COMMANDS:
+            session_style = _toggle_style(engine.config, command, session_style)
+            continue
+        if raw.startswith("!"):
+            pending_command = _capture_command(engine.config, raw[1:].strip()) \
+                or pending_command
+            continue
 
         if raw.endswith("\\"):
             raw = raw[:-1] + "\n" + _read_multi_line()
 
         try:
             with ui.thinking():
-                turn = engine.ask(raw, stream=stream, skip_retrieval=no_rag)
+                turn = engine.ask(raw, stream=stream, skip_retrieval=no_rag,
+                                  style=session_style,
+                                  command_output=pending_command)
         except LLMError as exc:
             ui.error(str(exc))
             continue
@@ -286,14 +376,95 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             ui.warn("cancelled")
             continue
 
+        pending_command = ""
         _print_retrieval(turn.retrieval)
         print(ui.assistant_prompt())
         _emit(turn.answer, plain=plain, markdown=markdown)
+        if turn.response.used_fallback:
+            ui.info(f"answered via fallback provider: {turn.response.provider}")
         usage = turn.response.usage
         if usage.prompt_tokens or usage.completion_tokens:
             ui.info(f"[{turn.retrieval.duration:.2f}s retrieval | "
                     f"{usage.prompt_tokens}+{usage.completion_tokens} tokens]")
 
+    engine.close()
+
+
+# ---------------------------------------------------------------------- run
+@main.command("run")
+@click.argument("command", nargs=-1, required=True)
+@click.option("--ask", "-a", "question", default=None,
+              help="Ask a question with the command output as context.")
+@click.option("--raw", is_flag=True, help="Do not route the command through rtk.")
+@click.option("--timeout", type=int, default=None,
+              help="Seconds before the command is stopped (default: command_timeout).")
+@click.option("--project", "-p", default=None, help="Project directory to index first.")
+@click.option("--no-rag", is_flag=True, help="Answer without retrieving project context.")
+@click.option("--stream", is_flag=True, help="Stream the answer as it arrives.")
+@click.option("--caveman", is_flag=True, help="Answer in telegraphic style.")
+@click.option("--plain", is_flag=True, help="Print the raw Markdown answer.")
+@click.option("--markdown/--no-markdown", default=True, help="Render Markdown.")
+def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
+            timeout: int | None, project: str | None, no_rag: bool,
+            stream: bool, caveman: bool, plain: bool, markdown: bool) -> None:
+    """Run a terminal command (through rtk when installed).
+
+    \b
+    Examples:
+      rag-assist run git status
+      rag-assist run --ask "what broke?" pytest -x
+      rag-assist run "git diff --stat"
+
+    The exit code is the command's own, so it composes with scripts.
+    """
+    settings = Config()
+    if len(command) == 1:
+        # A single quoted argument may carry the whole command line.
+        try:
+            argv = command_mod.split_command(command[0])
+        except CommandError as exc:
+            ui.error(str(exc))
+            sys.exit(2)
+    else:
+        argv = list(command)
+
+    try:
+        with ui.thinking("Running command"):
+            result = command_mod.run(
+                argv,
+                timeout=timeout or int(
+                    settings.get("command_timeout", command_mod.DEFAULT_TIMEOUT)
+                    or command_mod.DEFAULT_TIMEOUT),
+                limit=int(
+                    settings.get("command_output_limit", command_mod.DEFAULT_LIMIT)
+                    or command_mod.DEFAULT_LIMIT),
+                use_rtk=not raw and bool(settings.get("command_use_rtk", True)),
+            )
+    except CommandError as exc:
+        ui.error(str(exc))
+        sys.exit(127)
+
+    _print_command(result)
+
+    if not question:
+        sys.exit(result.exit_code)
+
+    engine = CoreEngine(settings)
+    target = project or engine.config.project_path()
+    if target and not no_rag:
+        _auto_index(engine, target)
+    try:
+        with ui.thinking():
+            turn = engine.ask(question, stream=stream, skip_retrieval=no_rag,
+                              style="caveman" if caveman else None,
+                              command_output=result.for_prompt())
+    except LLMError as exc:
+        ui.error(str(exc))
+        engine.close()
+        sys.exit(1)
+    _print_retrieval(turn.retrieval)
+    print()
+    _emit(turn.answer, plain=plain, markdown=markdown)
     engine.close()
 
 
@@ -376,15 +547,20 @@ def config_show(reveal: bool) -> None:
 @click.argument("value", required=False)
 @click.option("--secret", is_flag=True,
               help="Store the value encrypted in the keystore (use for api_key).")
-def config_set(key: str | None, value: str | None, secret: bool) -> None:
+@click.option("--provider", "provider_id", default=None,
+              help="Store the key for one catalogue provider, not the default slot.")
+def config_set(key: str | None, value: str | None, secret: bool,
+               provider_id: str | None) -> None:
     """Set a configuration value.
 
     \b
     Examples:
-      rag-assist config set provider local
-      rag-assist config set api_model llama-3.1-8b-instant
-      rag-assist config set default_project_path ~/projects/app
-      rag-assist config set api_key --secret          (prompts without echo)
+      rag-assist config set provider deepseek
+      rag-assist config set api_model deepseek-flash
+      rag-assist config set api_key --secret                    (default slot)
+      rag-assist config set api_key --provider groq --secret    (per provider)
+      rag-assist config set fallback_providers "groq, deepseek"
+      rag-assist config set response_style caveman
       rag-assist config set system_prompt "You are terse."
     """
     settings = Config()
@@ -395,17 +571,43 @@ def config_set(key: str | None, value: str | None, secret: bool) -> None:
 
     if key == "provider":
         if value is None:
-            ui.error("provider requires a value: external, local, openai, or groq")
+            ui.error("provider requires a value: external, local, or any "
+                     "catalogue id (see 'rag-assist providers list')")
             sys.exit(2)
         try:
-            settings.set_provider(value)
+            report = settings.set_provider(value)
         except ConfigError as exc:
             ui.error(str(exc))
             sys.exit(2)
-        ui.success(f"provider set to '{value}'")
+        shown = report.get("name") or report["provider"]
+        ui.success(f"provider set to '{report['provider']}'" +
+                   (f" ({shown})" if shown != report["provider"] else ""))
+        if report.get("model"):
+            ui.info(f"model set to {report['model']} "
+                    f"(change it with: rag-assist config set api_model <id>)")
+        if report.get("model_count"):
+            ui.info(f"{report['model_count']} model(s) in the catalogue; "
+                    f"browse with: rag-assist providers models {report['provider']}")
         return
 
     if key == "api_key":
+        if provider_id:
+            if secret and value is None:
+                value = click.prompt(f"API key for {provider_id}",
+                                     hide_input=True, confirmation_prompt=True)
+            value = value or ""
+            try:
+                settings.set_provider_key(provider_id, value)
+            except (ConfigError, crypto.CredentialStoreError) as exc:
+                ui.error(str(exc))
+                sys.exit(1)
+            if value:
+                ui.success(f"API key for '{provider_id}' stored encrypted "
+                           "(config.yaml keeps only a reference)")
+            else:
+                ui.success(f"API key for '{provider_id}' removed")
+            return
+
         if secret and value is None:
             value = click.prompt("API key", hide_input=True, confirmation_prompt=True)
         if value is None:
@@ -429,12 +631,44 @@ def config_set(key: str | None, value: str | None, secret: bool) -> None:
         ui.error(f"'{key}' requires a value")
         sys.exit(2)
 
+    if key == "fallback_providers":
+        _validate_fallbacks(value)
+
     # Coerce numeric-looking values so YAML stores ints, not strings.
     coerced: object = value
     if value.lstrip("-").replace(".", "", 1).isdigit():
         coerced = float(value) if "." in value else int(value)
-    settings.set(key, coerced, audit_event=f"config.set.{key}")
+    try:
+        settings.set(key, coerced, audit_event=f"config.set.{key}")
+    except ConfigError as exc:
+        ui.error(str(exc))
+        sys.exit(2)
+    if key == "fallback_providers":
+        entries = settings.fallback_entries()
+        shown = ", ".join(pid + (f":{model}" if model else "") for pid, model in entries)
+        ui.success(f"fallback_providers = {shown or '(cleared)'}")
+        if entries:
+            ui.info("fallbacks are tried in order when the active provider "
+                    "fails; keys come from each provider's own store or env var")
+        return
     ui.success(f"{key} = {value}")
+
+
+def _validate_fallbacks(value: str) -> None:
+    """Reject fallback entries that name unknown providers."""
+    entries = [part.strip() for part in value.split(",") if part.strip()]
+    for entry in entries:
+        provider_id = entry.partition(":")[0].strip().lower()
+        known = provider_id in PROVIDERS
+        if not known:
+            try:
+                known = catalog_mod.load_catalog().get(provider_id) is not None
+            except catalog_mod.CatalogError:
+                known = False
+        if not known:
+            ui.error(f"unknown provider '{provider_id}' in fallback_providers. "
+                     "Find ids with: rag-assist providers list --search <text>")
+            sys.exit(2)
 
 
 @config.command("path")
@@ -445,10 +679,121 @@ def config_path_cmd() -> None:
         ("config", paths.config_path()),
         ("index", paths.index_db_path()),
         ("keystore", paths.keystore_path()),
+        ("catalog", paths.catalog_path()),
         ("log", paths.app_log_path()),
         ("audit", paths.audit_log_path()),
     ):
         print(f"  {ui.paint(label, ui.BOLD):<10} {value}")
+
+
+# ----------------------------------------------------------------- providers
+def _load_catalog() -> "catalog_mod.Catalog":
+    try:
+        return catalog_mod.load_catalog()
+    except catalog_mod.CatalogError as exc:
+        ui.error(str(exc))
+        sys.exit(1)
+
+
+@main.group()
+def providers() -> None:
+    """Browse the bundled catalogue of 200+ providers and their models."""
+
+
+@providers.command("list")
+@click.option("--search", "-s", default="", help="Filter by provider id or name.")
+@click.option("--all", "show_all", is_flag=True,
+              help="Include providers without an OpenAI-compatible endpoint.")
+@click.option("--limit", type=int, default=40, show_default=True)
+def providers_list(search: str, show_all: bool, limit: int) -> None:
+    """List providers; only ready-to-use ones by default."""
+    catalogue = _load_catalog()
+    total, models = catalogue.counts()
+    ready = sum(1 for entry in catalogue.providers.values() if entry.selectable)
+    ui.heading(f"Providers ({total} listed, {ready} ready to use)")
+    ui.info(f"snapshot: {catalogue.fetched_at or 'bundled'} | "
+            f"{models} models in total")
+    rows = catalogue.search(search, compatible_only=not show_all)
+    for entry in rows[:limit]:
+        mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
+        print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', ui.BOLD)}"
+              f"{entry.name[:30]:<32}{entry.model_count:>5} models")
+    if len(rows) > limit:
+        ui.info(f"... {len(rows) - limit} more; raise --limit or narrow --search")
+    if not rows:
+        ui.info("no provider matches; try: rag-assist providers refresh")
+
+
+@providers.command("show")
+@click.argument("provider_id")
+def providers_show(provider_id: str) -> None:
+    """Show one provider's endpoint, key variable, and default model."""
+    catalogue = _load_catalog()
+    provider = catalogue.get(provider_id)
+    if provider is None:
+        ui.error(f"unknown provider '{provider_id}'. "
+                 "Try: rag-assist providers list --search <text>")
+        sys.exit(1)
+    ui.heading(provider.name)
+    print(f"  id          {provider.id}")
+    print(f"  endpoint    {provider.api or '(not published - set api_base_url)'}")
+    print(f"  key         {', '.join(provider.env) or '(none listed)'}")
+    print(f"  models      {provider.model_count}")
+    print(f"  default     {provider.default_model or '(none picked)'}")
+    if provider.doc:
+        print(f"  docs        {provider.doc}")
+    ready = ui.paint("yes", ui.GREEN) if provider.selectable else ui.paint("no", ui.YELLOW)
+    print(f"  compatible  {ready}")
+    if not provider.selectable:
+        ui.warn("this endpoint is not OpenAI chat-completions; rag-assist "
+                "cannot call it directly")
+    else:
+        ui.info(f"switch with: rag-assist config set provider {provider.id}")
+
+
+@providers.command("models")
+@click.argument("provider_id")
+@click.option("--search", "-s", default="", help="Filter by model id or name.")
+@click.option("--limit", type=int, default=30, show_default=True)
+def providers_models(provider_id: str, search: str, limit: int) -> None:
+    """List the models a provider hosts, newest first."""
+    catalogue = _load_catalog()
+    provider = catalogue.get(provider_id)
+    if provider is None:
+        ui.error(f"unknown provider '{provider_id}'")
+        sys.exit(1)
+    rows = catalogue.models(provider_id, search)
+    ui.heading(f"{provider.name} - {len(rows)} model(s)")
+    for model_id, model in rows[:limit]:
+        context = model.get("context")
+        context_text = f"{context // 1000}k" if isinstance(context, int) and context else "?"
+        cost_in, cost_out = model.get("input"), model.get("output")
+        if isinstance(cost_in, (int, float)) or isinstance(cost_out, (int, float)):
+            left = cost_in if isinstance(cost_in, (int, float)) else "?"
+            right = cost_out if isinstance(cost_out, (int, float)) else "?"
+            cost_text = f"${left}/{right} per M tokens"
+        else:
+            cost_text = ""
+        print(f"  {ui.paint(f'{model_id:<46}', ui.BOLD)}{context_text:>8}  {cost_text}")
+    if len(rows) > limit:
+        ui.info(f"... {len(rows) - limit} more; raise --limit or narrow --search")
+
+
+@providers.command("refresh")
+@click.option("--url", default=catalog_mod.CATALOG_URL, show_default=False,
+              help="Catalogue source (default: the models.dev registry).")
+@click.option("--timeout", type=int, default=45, show_default=True)
+def providers_refresh(url: str, timeout: int) -> None:
+    """Fetch a fresh catalogue into the state directory."""
+    try:
+        with ui.thinking("Fetching catalogue"):
+            catalogue = catalog_mod.refresh(url, timeout=timeout)
+    except catalog_mod.CatalogError as exc:
+        ui.error(str(exc))
+        sys.exit(1)
+    total, models = catalogue.counts()
+    ui.success(f"catalogue updated: {total} providers, {models} models")
+    print(f"  stored in {paths.catalog_path()}")
 
 
 # ------------------------------------------------------------------- update
@@ -547,10 +892,20 @@ def status() -> None:
     """Show the provider, index state, and an LLM health check."""
     settings = Config()
     ui.heading("Status")
-    print(f"  provider  {settings.get('model_provider')}")
+    provider_id = str(settings.get("api_provider") or "")
+    provider = settings.get("model_provider")
+    print(f"  provider  {provider}" + (f" ({provider_id})" if provider_id else ""))
     print(f"  model     {settings.get('api_model')}")
     print(f"  base url  {settings.provider_base_url()}")
-    print(f"  api key   {'set (encrypted)' if settings.has_api_key() else 'not set'}")
+    key_state = "set" if settings.api_key_for(provider_id) else "not set"
+    print(f"  api key   {key_state}" +
+          (" (keystore/encrypted)" if key_state == "set" else ""))
+    style = str(settings.get("response_style", "default") or "default")
+    print(f"  style     {style_mod.describe(style)}")
+    entries = settings.fallback_entries()
+    if entries:
+        chain = " -> ".join(pid + (f":{model}" if model else "") for pid, model in entries)
+        print(f"  fallback  {provider_id or provider} -> {chain}")
 
     try:
         with ProjectIndex() as idx:
@@ -587,6 +942,10 @@ def doctor() -> None:
         mark = ui.paint("PASS", ui.GREEN) if passed else ui.paint("FAIL", ui.RED)
         print(f"  [{mark}] {label}" + (f" - {detail}" if detail else ""))
 
+    def note(label: str, detail: str = "") -> None:
+        mark = ui.paint("INFO", ui.GREY)
+        print(f"  [{mark}] {label}" + (f" - {detail}" if detail else ""))
+
     check("python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0])
     check("platform", True, f"{sys.platform}")
 
@@ -616,8 +975,46 @@ def doctor() -> None:
     check("no plaintext api key", not (api_key and not crypto.is_reference(api_key)),
           "keystore reference" if crypto.is_reference(api_key) else "none set")
 
+    provider_keys = settings.data.get("provider_keys") or {}
+    plaintext = [name for name, value in provider_keys.items()
+                 if value and not crypto.is_reference(value)]
+    check("no plaintext provider keys", not plaintext,
+          ", ".join(plaintext) if plaintext else
+          (f"{len(provider_keys)} reference(s)" if provider_keys else "none set"))
+
     binary = shutil.which(str(settings.get("local_llama_bin", "llama-cli")) or "")
     check("llama.cpp binary", bool(binary), binary or "not installed (local mode unavailable)")
+
+    version = command_mod.rtk_version()
+    if version is not None:
+        check("rtk", True, f"{version} - command output filtered before it reaches the model")
+    else:
+        note("rtk", "not installed - optional; install from github.com/rtk-ai/rtk "
+                    "to trim command output")
+
+    try:
+        catalogue = catalog_mod.load_catalog()
+        providers, models = catalogue.counts()
+        check("provider catalogue", providers > 0,
+              f"{providers} providers, {models} models"
+              + (f", snapshot {catalogue.fetched_at}" if catalogue.fetched_at else " (bundled)"))
+    except catalog_mod.CatalogError as exc:
+        check("provider catalogue", False, str(exc))
+
+    entries = settings.fallback_entries()
+    for provider_id, _ in entries:
+        provider = None
+        try:
+            provider = catalog_mod.load_catalog().get(provider_id)
+        except catalog_mod.CatalogError:
+            provider = None
+        if provider is None and provider_id not in PROVIDERS:
+            note(f"fallback '{provider_id}'", "unknown provider id; it will be skipped")
+        elif provider is not None and not provider.selectable:
+            note(f"fallback '{provider_id}'", "not OpenAI-compatible; it will be skipped")
+        elif not settings.api_key_for(provider_id):
+            note(f"fallback '{provider_id}'", "no key stored and no env var set; "
+                                              "it will be skipped")
 
     ui.info("")
     ui.success("all checks passed") if ok else ui.warn("some checks failed")

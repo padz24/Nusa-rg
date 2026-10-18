@@ -50,6 +50,7 @@ class LLMResponse:
     text: str
     usage: Usage = field(default_factory=Usage)
     provider: str = ""
+    used_fallback: bool = False
 
     def as_dict(self) -> dict:
         return {"text": self.text, "usage": self.usage.as_dict()}

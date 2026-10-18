@@ -50,6 +50,7 @@ class ApiClient(LLMClient):
         timeout: int = 60,
         temperature: float = 0.2,
         max_tokens: int | None = None,
+        name: str = "",
     ):
         if not base_url:
             raise AuthenticationError("no API base URL configured")
@@ -59,6 +60,10 @@ class ApiClient(LLMClient):
         self.timeout = timeout
         self.temperature = temperature
         self.max_tokens = max_tokens
+        if name:
+            # The catalogue id ("groq", "deepseek") reads better in logs and
+            # in the "[provider]" note than the generic class default.
+            self.name = name
 
     # ------------------------------------------------------------ transport
     @property

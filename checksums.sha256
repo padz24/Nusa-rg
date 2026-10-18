@@ -7,4 +7,4 @@
 # manifest. Shipped native binaries (for example a prebuilt llama-cli) MUST be
 # listed here, and their hashes updated whenever the release binary changes.
 #
-37391431508aff8402b5bb10b9fdb246e04a8b16cf141af726fae3739ee748b7  rag-assist.1
+3cf0d049a138a18ec29cfc586a46da0b324d607dc7aff40f61c00154f06341a3  rag-assist.1

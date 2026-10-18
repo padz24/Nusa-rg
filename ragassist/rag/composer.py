@@ -15,6 +15,8 @@ from .retriever import RetrievalResult
 
 CONTEXT_OPEN = "<|RAG_CONTEXT|>"
 CONTEXT_CLOSE = "<|/RAG_CONTEXT|>"
+COMMAND_OPEN = "<|RAG_COMMAND|>"
+COMMAND_CLOSE = "<|/RAG_COMMAND|>"
 USER_OPEN = "<|RAG_USER|>"
 USER_CLOSE = "<|/RAG_USER|>"
 
@@ -53,22 +55,39 @@ def format_context(result: RetrievalResult, max_chars: int = 6000) -> str:
     return "\n\n".join(blocks)
 
 
+def format_command(output: str, max_chars: int) -> str:
+    """Clip command output to the prompt budget, keeping head and tail."""
+    body = output.strip()
+    if len(body) <= max_chars:
+        return body
+    keep = max_chars // 2
+    return f"{body[:keep]}\n... [output trimmed] ...\n{body[-keep:]}"
+
+
 def compose(
     query: str,
     system_prompt: str,
     retrieval: RetrievalResult | None = None,
     *,
+    command_output: str = "",
     max_context_chars: int = 6000,
+    max_command_chars: int = 8000,
 ) -> ComposedPrompt:
     """Build the system/user message pair for one turn.
 
-    When retrieval found nothing the question is sent unwrapped, so a small or
-    empty project does not add pointless scaffolding tokens to every request.
+    Blocks are only added when they carry something: a project with no index
+    and no command run gets a bare question, so no turn pays for empty
+    scaffolding tokens.
     """
     clean_query = sanitize.sanitize_command_line(query.strip())
     clean_system = sanitize.sanitize_untrusted(system_prompt.strip())
 
-    if retrieval is None or not retrieval.snippets:
+    used_context = bool(retrieval is not None and retrieval.snippets)
+    clean_command = (
+        sanitize.sanitize_untrusted(format_command(command_output, max_command_chars))
+        if command_output.strip() else ""
+    )
+    if not used_context and not clean_command:
         return ComposedPrompt(
             system=clean_system,
             user=f"{USER_OPEN}\n{clean_query}\n{USER_CLOSE}",
@@ -76,13 +95,26 @@ def compose(
             used_context=False,
         )
 
-    context = format_context(retrieval, max_context_chars)
-    user = (
-        f"{CONTEXT_OPEN}\n{context}\n{CONTEXT_CLOSE}\n\n"
-        f"Use the project excerpts above when they are relevant. "
-        f"Cite them as [path:line].\n\n"
-        f"{USER_OPEN}\n{clean_query}\n{USER_CLOSE}"
-    )
+    parts: list[str] = []
+    context = ""
+    if used_context:
+        context = format_context(retrieval, max_context_chars)
+        parts.append(
+            f"{CONTEXT_OPEN}\n{context}\n{CONTEXT_CLOSE}\n\n"
+            "Use the project excerpts above when they are relevant. "
+            "Cite them as [path:line]."
+        )
+    if clean_command:
+        parts.append(
+            f"{COMMAND_OPEN}\n{clean_command}\n{COMMAND_CLOSE}\n\n"
+            "The command output above came from the user's terminal. "
+            "Use it when it is relevant."
+        )
+    parts.append(f"{USER_OPEN}\n{clean_query}\n{USER_CLOSE}")
+
     return ComposedPrompt(
-        system=clean_system, user=user, context=context, used_context=True
+        system=clean_system,
+        user="\n\n".join(parts),
+        context=context,
+        used_context=used_context,
     )
