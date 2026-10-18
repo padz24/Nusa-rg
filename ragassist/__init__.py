@@ -4,7 +4,7 @@ Public surface:
     ``from ragassist import CoreEngine, Config, ProjectIndex``
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 __all__ = ["CoreEngine", "Config", "ProjectIndex", "__version__"]
 
