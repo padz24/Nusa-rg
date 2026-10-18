@@ -9,8 +9,39 @@
 set -euo pipefail
 
 PACKAGE="termux-rag-assist"
-REPO_DIR="${RAG_ASSIST_REPO_DIR:-$HOME/rag-assist}"
 MIN_TERMUX="0.118"
+
+# Where the source tree lives. Three ways to end up here, in order:
+#
+#   1. RAG_ASSIST_REPO_DIR -- an explicit override, always wins.
+#   2. This script's own directory, when it holds a checkout. `rag-assist
+#      update` re-runs this script from the tree it just updated, and so does
+#      anyone running `./install.sh` by hand. Without this, the script would
+#      clone a *second* copy into $HOME/rag-assist and install that instead,
+#      silently leaving the updated tree unused.
+#   3. $HOME/rag-assist -- the one-liner `curl ... | bash` path, which has no
+#      source tree of its own.
+#
+# Case 2 requires ${BASH_SOURCE[0]} to be a real file: under `curl | bash` it
+# is "bash", and mistaking the user's current directory for a checkout would
+# install whatever unrelated project they happened to be standing in.
+resolve_repo_dir() {
+  if [ -n "${RAG_ASSIST_REPO_DIR:-}" ]; then
+    REPO_DIR="$RAG_ASSIST_REPO_DIR"
+    return 0
+  fi
+  local self="${BASH_SOURCE[0]:-}"
+  if [ -f "$self" ]; then
+    local here; here="$(cd "$(dirname "$self")" && pwd)"
+    if [ -d "$here/ragassist" ] && [ -f "$here/pyproject.toml" ]; then
+      REPO_DIR="$here"
+      return 0
+    fi
+  fi
+  REPO_DIR="$HOME/rag-assist"
+}
+
+REPO_DIR=""
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[32m  ok\033[0m %s\n' "$*"; }
@@ -155,6 +186,15 @@ verify_checksums() {
 }
 
 main() {
+  resolve_repo_dir
+
+  # Test/debug seam: print the source directory this invocation would install,
+  # then return before anything is downloaded or modified.
+  if [ "${RAG_ASSIST_PRINT_REPO_DIR:-0}" = "1" ]; then
+    printf '%s\n' "$REPO_DIR"
+    return 0
+  fi
+
   log "installing $PACKAGE"
   check_platform
   check_termux_version

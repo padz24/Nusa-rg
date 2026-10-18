@@ -95,12 +95,14 @@ class UpdateResult:
 # ------------------------------------------------------------------ helpers
 
 def _run(command: list[str], cwd: Path | None = None,
-         timeout: int = 120) -> tuple[int, str, str]:
+         timeout: int = 120,
+         env: dict[str, str] | None = None) -> tuple[int, str, str]:
     """Run a command with no shell involved, never raising."""
     try:
         completed = subprocess.run(  # noqa: S603 - argv list, shell=False
             command,
             cwd=str(cwd) if cwd else None,
+            env={**os.environ, **env} if env else None,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -370,8 +372,14 @@ def perform(info: UpdateInfo, *, force: bool = False,
         if not script.is_file():
             result.detail = f"updated the checkout, but {script} is missing"
             return result
+        # Point the installer at the tree we just updated. It also works this
+        # out on its own, but saying so explicitly keeps the two from drifting.
+        env = {"RAG_ASSIST_REPO_DIR": str(source_dir)}
+        if shutil.which("llama-cli") is None:
+            # Never let an optional, multi-minute build block an update.
+            env["RAG_ASSIST_SKIP_LLAMA"] = "1"
         code, out, err = _run(["bash", str(script)], cwd=source_dir,
-                              timeout=DEFAULT_TIMEOUT)
+                              timeout=DEFAULT_TIMEOUT, env=env)
         if code != 0:
             result.ok = False
             result.detail = (
