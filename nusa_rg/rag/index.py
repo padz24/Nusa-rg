@@ -20,7 +20,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Callable, Iterable, Iterator
 
 from .. import paths, sanitize
 from .scanner import ScanResult, ScannedFile, scan
@@ -77,6 +77,20 @@ class IndexStats:
             f"{self.duration:.2f}s ({self.files_unchanged} unchanged, "
             f"{self.files_skipped} skipped, {self.files_removed} removed)"
         )
+
+
+@dataclass
+class IndexEvent:
+    """Progress ping emitted while indexing (phase, done, total, detail).
+
+    Phases: ``scan`` (walking the tree), ``planned`` (file list is known),
+    ``file`` (one scanned file processed, including skipped ones), ``done``.
+    """
+
+    phase: str
+    done: int = 0
+    total: int = 0
+    detail: str = ""
 
 
 def _fts_query_escape(text: str) -> str:
@@ -246,13 +260,18 @@ class ProjectIndex:
         chunk_size: int = 60,
         overlap: int = 10,
         force: bool = False,
+        on_event: Callable[[IndexEvent], None] | None = None,
     ) -> IndexStats:
         """Scan ``root`` and index its text files.
 
         Switching to a different project root clears the previous index, so the
         assistant never retrieves snippets from an unrelated directory.
+        ``on_event`` receives :class:`IndexEvent` pings; it is only wired up
+        when a caller (the CLI) wants a progress display.
         """
+        emit = on_event or (lambda event: None)
         started = time.perf_counter()
+        emit(IndexEvent("scan", 0, 0, str(root)))
         result: ScanResult = scan(
             root,
             ignore_dirs=frozenset(ignore_dirs),
@@ -261,6 +280,8 @@ class ProjectIndex:
         )
         stats = IndexStats(root=result.root, scanned=len(result.files))
         stats.files_skipped = result.skipped
+        total_files = len(result.files)
+        emit(IndexEvent("planned", 0, total_files))
 
         previous_root = self.project_root
         if previous_root and previous_root != result.root:
@@ -270,7 +291,8 @@ class ProjectIndex:
 
         known = {} if force else self._known()
 
-        for entry in result.files:
+        for position, entry in enumerate(result.files, start=1):
+            emit(IndexEvent("file", position, total_files, entry.relpath))
             row = known.get(entry.path)
             unchanged = (
                 row is not None
@@ -292,6 +314,7 @@ class ProjectIndex:
         # One commit per batch keeps the transaction window small (AC-21).
         self.conn.commit()
         stats.duration = time.perf_counter() - started
+        emit(IndexEvent("done", total_files, total_files))
         return stats
 
     # ------------------------------------------------------------ retrieval

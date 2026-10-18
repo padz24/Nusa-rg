@@ -13,7 +13,7 @@ from pathlib import Path
 from .config import Config
 from . import llm
 from . import style as style_mod
-from .llm.base import LLMResponse
+from .llm.base import LLMResponse, Usage
 from .logging_setup import audit, log_event
 from .rag import ComposedPrompt, ProjectIndex, RetrievalResult, compose, retrieve
 
@@ -57,8 +57,13 @@ class CoreEngine:
             self._index = None
 
     # -------------------------------------------------------------- indexing
-    def index_project(self, root: str | None = None, *, force: bool = False):
-        """Index a project directory and record it as the default path."""
+    def index_project(self, root: str | None = None, *, force: bool = False,
+                      on_event=None):
+        """Index a project directory and record it as the default path.
+
+        ``on_event`` is forwarded to :meth:`ProjectIndex.index` so the CLI can
+        show a progress display (it is ``None`` for silent runs).
+        """
         target = root or self.config.project_path()
         if not target:
             raise ValueError(
@@ -75,6 +80,7 @@ class CoreEngine:
             chunk_size=int(self.config.get("chunk_lines", 60)),
             overlap=int(self.config.get("chunk_overlap_lines", 10)),
             force=force,
+            on_event=on_event,
         )
         # Remember the indexed root so later sessions need no path argument.
         self.config.set("default_project_path", resolved,
@@ -88,13 +94,20 @@ class CoreEngine:
     # -------------------------------------------------------------- chat
     def ask(self, query: str, *, stream: bool = False,
             skip_retrieval: bool = False, style: str | None = None,
-            command_output: str = "") -> TurnResult:
+            command_output: str = "", on_retrieval=None,
+            on_delta=None) -> TurnResult:
         """Run one full turn: retrieve -> compose -> generate (FR-10).
 
         Retrieval is skipped automatically when no project has been indexed, so
         a fresh install can still answer general questions. ``style`` overrides
         the configured ``response_style`` for this turn; ``command_output`` is
         terminal output the user captured with ``!command``.
+
+        ``on_retrieval`` (if given) fires with the retrieval result as soon as
+        it is ready, and ``on_delta`` switches generation to incremental
+        streaming: each text delta is handed to the callback and the full text
+        is still returned in the ``TurnResult``. Providers without streaming
+        support quietly fall back to a whole-answer call (AC-41).
         """
         retrieval = RetrievalResult(query=query)
         if not skip_retrieval:
@@ -110,6 +123,9 @@ class CoreEngine:
                 log_event("retrieve", query=query, hits=len(retrieval.snippets),
                           duration=f"{retrieval.duration:.3f}")
 
+        if on_retrieval is not None:
+            on_retrieval(retrieval)
+
         base_system = str(self.config.get("system_prompt", "") or "")
         effective_style = style or str(
             self.config.get("response_style", "default") or "default")
@@ -124,9 +140,22 @@ class CoreEngine:
         # substituted without touching any RAG code (AC-27).
         client = llm.build_client(self.config)
         log_event("llm.generate", provider=client.name, context=prompt.used_context)
-        response = client.generate(
-            prompt.user, context="", system=prompt.system, stream=stream
-        )
+
+        if on_delta is not None and getattr(client, "supports_stream", None) \
+                and client.supports_stream():
+            parts: list[str] = []
+            for delta in client.iter_stream(prompt.user, system=prompt.system):
+                parts.append(delta)
+                on_delta(delta)
+            response = LLMResponse(
+                text="".join(parts),
+                usage=Usage(),
+                provider=client.name,
+            )
+        else:
+            response = client.generate(
+                prompt.user, context="", system=prompt.system, stream=stream
+            )
         return TurnResult(
             answer=response.text,
             prompt=prompt,

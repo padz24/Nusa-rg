@@ -8,6 +8,8 @@ error raised at the end lists what each one said.
 
 from __future__ import annotations
 
+from typing import Iterator
+
 from .base import LLMClient, LLMError, LLMResponse
 
 
@@ -24,6 +26,11 @@ class FailoverClient(LLMClient):
     @property
     def labels(self) -> list[str]:
         return [label for label, _ in self.clients]
+
+    @staticmethod
+    def _streams(client: LLMClient) -> bool:
+        supports = getattr(client, "supports_stream", None)
+        return bool(supports and supports())
 
     def generate(
         self,
@@ -48,6 +55,38 @@ class FailoverClient(LLMClient):
             # chain label, so callers can say who answered.
             response.provider = response.provider or label
             return response
+
+        detail = "; ".join(f"{label}: {exc}" for label, exc in failures)
+        raise LLMError(f"every provider in the chain failed -- {detail}")
+
+    # ------------------------------------------------------------- streaming
+    def supports_stream(self) -> bool:
+        return any(self._streams(client) for _, client in self.clients)
+
+    def iter_stream(self, prompt: str, *, context: str = "",
+                    system: str = "") -> Iterator[str]:
+        """Stream from the first provider that produces a delta.
+
+        A provider that fails *before* its first delta is skipped and the next
+        one is tried; once text has been emitted the chain commits to that
+        provider, because switching mid-answer would splice two completions.
+        """
+        failures: list[tuple[str, LLMError]] = []
+        for label, client in self.clients:
+            if not self._streams(client):
+                continue
+            started = False
+            try:
+                for delta in client.iter_stream(prompt, context=context,
+                                                system=system):
+                    started = True
+                    yield delta
+            except LLMError as exc:
+                if started:
+                    raise
+                failures.append((label, exc))
+                continue
+            return
 
         detail = "; ".join(f"{label}: {exc}" for label, exc in failures)
         raise LLMError(f"every provider in the chain failed -- {detail}")

@@ -282,6 +282,9 @@ class ApiClient(LLMClient):
             )
         return "The model returned an empty response."
 
+    def supports_stream(self) -> bool:
+        return True
+
     def iter_stream(self, prompt: str, *, context: str = "", system: str = "") -> Iterator[str]:
         """Yield text deltas for a streaming completion (AC-41)."""
         user = f"{context}\n\n{prompt}" if context else prompt

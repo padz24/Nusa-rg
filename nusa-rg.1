@@ -38,8 +38,9 @@ Options:
 .BR \-p ", " \-\-project " \fIPATH\fR"
 .B \-\-no\-rag
 skip retrieval;
-.B \-\-stream
-stream the API response;
+.BR \-\-stream " / " \-\-no\-stream
+stream the answer as it arrives (default: on when the terminal is
+interactive);
 .B \-\-index " / " \-\-no\-index
 control automatic indexing;
 .B \-\-caveman
@@ -183,6 +184,9 @@ Override the state directory. Default
 .TP
 .B NO_COLOR
 When set, disables all ANSI colour output.
+.TP
+.B NUSA_RG_NO_ANIM
+When set, skips the banner intro animation.
 .TP
 .B GROQ_API_KEY, OPENAI_API_KEY, ...
 Keys for catalogue providers are read from the environment variables models.dev

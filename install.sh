@@ -116,7 +116,7 @@ install_deps() {
 
   local failed=()
   local module
-  for module in click requests yaml cryptography markdown2; do
+  for module in click requests yaml cryptography markdown2 rich; do
     install_module "$module" || failed+=("$module")
   done
 
