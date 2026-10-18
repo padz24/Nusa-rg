@@ -37,7 +37,13 @@ GITHUB_REPO = "https://github.com/PADZ-PRD/RAG-termux-cli"
 REMOTE_KEY = "update_remote"
 
 #: A git remote we will fetch from.
-_REMOTE_RE = re.compile(r"^(?P<url>\S+?)(?:\.git)?$")
+#:
+#: Captured verbatim. This used to strip a trailing ``.git``, which was meant
+#: for ssh URLs but silently rewrote local paths too: a bare repository at
+#: ``/srv/mirror.git`` was reported as ``/srv/mirror``, a different directory
+#: that then failed to match the path the user had configured. Normalisation
+#: belongs in the comparison, not in the read.
+_REMOTE_RE = re.compile(r"^(?P<url>\S+)$")
 
 METHOD_SOURCE = "source"
 METHOD_PACKAGE = "package"
@@ -169,23 +175,43 @@ def _is_local_remote(url: str) -> bool:
     return not url.lower().startswith(("http://", "https://", "git@", "ssh://"))
 
 
-def _normalise_remote(url: str) -> str:
-    """Strip scheme and a trailing ``.git`` so equivalent forms compare equal."""
-    cleaned = url.strip()
-    for prefix in ("https://", "http://", "git@github.com:", "ssh://git@"):
-        if cleaned.lower().startswith(prefix):
-            cleaned = cleaned[len(prefix):]
-            break
-    cleaned = cleaned.strip("/")
+def _local_path(value: str) -> str:
+    """Canonical form of a local remote path.
+
+    A trailing ``.git`` is dropped because a bare repository can be named
+    either way and both refer to it. Keeping it would refuse a checkout over
+    nothing the user could act on -- and it would also make ``/srv/mirror`` and
+    ``/srv/mirror.git`` look like different repositories when they are the same
+    one to git.
+    """
+    cleaned = os.path.normpath(os.path.expanduser(value.strip()))
     return cleaned[:-4] if cleaned.lower().endswith(".git") else cleaned
+
+
+def _https_parts(url: str) -> tuple[str, str] | None:
+    """(host, path) for an ``https://`` URL, or None for anything else.
+
+    Returning None for every other scheme is deliberate. The original guard
+    matched only on ``https://``, and loosening it to "strip the scheme and
+    compare host and path" silently started accepting ``http://``, which is
+    plain text: an update fetches code from that remote and runs it.
+    """
+    if not url.lower().startswith("https://"):
+        return None
+    host, _, path = url.strip()[len("https://"):].partition("/")
+    path = path.strip("/")
+    if path.lower().endswith(".git"):
+        path = path[:-4]
+    return host.strip().lower(), path.lower()
 
 
 def _is_expected_remote(url: str | None, expected: str | None = None) -> bool:
     """True only for the remote the user is entitled to update from.
 
     Derived from :data:`GITHUB_REPO` (or an explicitly configured remote) so
-    the two cannot drift apart, and strict about host and path so a ``.git``
-    directory belonging to some other project is never mistaken for this one.
+    the two cannot drift apart, and strict about scheme, host and path so a
+    ``.git`` directory belonging to some other project is never mistaken for
+    this one.
     """
     if not url:
         return False
@@ -193,20 +219,16 @@ def _is_expected_remote(url: str | None, expected: str | None = None) -> bool:
     if not expected:
         return False
 
-    actual_norm = _normalise_remote(url)
-
     if _is_local_remote(expected):
-        # An offline remote is only accepted when it was configured by hand.
+        # An offline remote is only accepted when it was configured by hand,
+        # and only when the checkout actually points at that exact path.
         if not _is_local_remote(url):
             return False
-        return os.path.normpath(os.path.expanduser(actual_norm)) == \
-            os.path.normpath(os.path.expanduser(_normalise_remote(expected)))
+        return _local_path(url) == _local_path(expected)
 
     if _is_local_remote(url):
         return False
-    expected_host, _, expected_path = _normalise_remote(expected).partition("/")
-    host, _, path = actual_norm.partition("/")
-    return host.lower() == expected_host.lower() and path == expected_path
+    return _https_parts(url) is not None and _https_parts(url) == _https_parts(expected)
 
 
 def current_branch(source_dir: Path) -> str:
@@ -283,10 +305,18 @@ def check() -> UpdateInfo:
     info.branch = current_branch(source_dir)
     info.dirty = is_dirty(source_dir)
 
-    if not _is_expected_remote(_remote_url(source_dir)):
+    configured = expected_remote()
+    actual = _remote_url(source_dir)
+    if not _is_expected_remote(actual):
         info.method = METHOD_UNKNOWN
-        info.detail = (f"{source_dir} is a git repository but not a checkout "
-                       f"of {GITHUB_REPO}; refusing to update it")
+        # Name the remote the user actually configured, not the built-in
+        # default: with an offline mirror configured, blaming GitHub would
+        # point at the wrong repository.
+        hint = ("" if configured == GITHUB_REPO
+                else f" (update_remote is set to {configured})")
+        info.detail = (f"{source_dir} is not a checkout of {configured}{hint}; "
+                       f"its origin is {actual or 'unset'}; "
+                       f"refusing to update it")
         return info
 
     info.method = METHOD_SOURCE

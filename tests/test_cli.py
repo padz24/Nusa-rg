@@ -41,9 +41,14 @@ def test_short_help_flag(runner):
 
 
 def test_version(runner):
+    from ragassist import __version__
+
     result = run(runner, ["--version"])
     assert result.exit_code == 0
-    assert "1.0.0" in result.output
+    # Compared against the package, not a literal: a hardcoded version here
+    # fails on every release, which is how a stale pin goes unnoticed.
+    assert __version__ in result.output
+    assert result.output.strip() == f"rag-assist, version {__version__}"
 
 
 def test_unknown_command_fails(runner):

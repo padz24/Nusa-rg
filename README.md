@@ -133,7 +133,22 @@ max_context_snippets: 3
 chunk_lines: 60
 chunk_overlap_lines: 10
 ignore_dirs: ['.git', 'node_modules', '__pycache__', ...]
+update_remote: ''                # empty = the official GitHub repository only
 ```
+
+### Offline updates
+
+`rag-assist update` refuses any remote other than
+`https://github.com/PADZ-PRD/RAG-termux-cli`, because an update runs
+`git reset --hard` against `origin`. To update from a local mirror or an
+offline bare repository, name it explicitly:
+
+```bash
+rag-assist config set update_remote ~/RAG-termux-cli.git
+```
+
+That setting is the authorisation. It is not a default that a stray `origin`
+can satisfy on its own — leaving it empty keeps the GitHub-only guard in place.
 
 ## How retrieval works
 

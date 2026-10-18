@@ -73,9 +73,13 @@ Print the resolved path of every state file.
 Update a source checkout to the latest release and re\-run the installer.
 Config, credentials and the index in ~/.rag\-assist are never touched.
 An installation made from a package manager cannot self\-update; the command
-reports that and points at \fBpkg upgrade\fR. A checkout whose \fBorigin\fR is not
-\fBgithub.com/PADZ\-PRD/RAG\-termux\-cli\fR is refused. A dirty tree or a diverged
-branch stops the update unless \fB\-\-force\fR is given.
+reports that and points at \fBpkg upgrade\fR. An update runs \fBgit reset \-\-hard\fR
+against \fBorigin\fR, so a checkout whose remote is not
+\fBgithub.com/PADZ\-PRD/RAG\-termux\-cli\fR is refused unless
+\fBupdate_remote\fR names it, as in
+\fBrad\-assist config set update_remote ~/RAG\-termux\-cli.git\fR for an offline
+mirror. A dirty tree or a diverged branch stops the update unless
+\fB\-\-force\fR is given.
 .TP
 .B status
 Report the provider, the index size, and a connectivity check.

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import types
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -124,13 +125,108 @@ def test_version_parsing_handles_suffixes():
     ("https://github.com/evil/RAG-termux-cli", False),
     ("https://github.com/PADZ-PRD/other", False),
     ("git@github.com:PADZ-PRD/RAG-termux-cli.git", False),
+    # Plaintext HTTP must stay refused: an update fetches and runs this code.
     ("http://github.com/PADZ-PRD/RAG-termux-cli", False),
+    ("HTTPS://github.com/PADZ-PRD/RAG-termux-cli", True),
     ("/tmp/some/local/repo", False),
     ("", False),
     (None, False),
 ])
 def test_expected_remote(url, expected):
     assert update._is_expected_remote(url) is expected
+
+
+# ---------------------------------------------- local / offline opt-in remote
+@pytest.mark.parametrize("url,expected_remote_path,allowed", [
+    # Configured explicitly: the exact path is honoured.
+    ("/root/mirror.git", "/root/mirror.git", True),
+    ("/root/mirror.git/", "/root/mirror.git", True),
+    # A different local path is not what the user authorised.
+    ("/root/other.git", "/root/mirror.git", False),
+    # An https checkout is not the local mirror that was configured, and an
+    # https expected remote never authorises a local checkout.
+    ("https://github.com/PADZ-PRD/RAG-termux-cli", "/root/mirror.git", False),
+    ("/root/mirror.git", "https://github.com/PADZ-PRD/RAG-termux-cli", False),
+])
+def test_local_remote_requires_an_explicit_opt_in(url, expected_remote_path,
+                                                  allowed):
+    assert update._is_expected_remote(url, expected_remote_path) is allowed
+
+
+def test_local_remote_expands_a_tilde(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    home = Path(str(tmp_path)) / "mirror.git"
+    assert update._is_expected_remote("~/mirror.git", "~/mirror.git") is True
+    assert update._is_expected_remote("~/other.git", "~/mirror.git") is False
+    assert update._is_expected_remote(str(home), "~/mirror.git") is True
+
+
+def test_expected_remote_defaults_to_github_and_follows_config(monkeypatch):
+    from ragassist import config as config_module
+
+    monkeypatch.setattr(config_module.Config, "get",
+                        lambda self, key, default=None: default)
+    assert update.expected_remote() == update.GITHUB_REPO
+
+    monkeypatch.setattr(
+        config_module.Config, "get",
+        lambda self, key, default=None: "/root/mirror.git"
+        if key == update.REMOTE_KEY else default,
+    )
+    assert update.expected_remote() == "/root/mirror.git"
+
+
+def test_a_broken_config_cannot_open_the_guard(monkeypatch):
+    """A config that explodes must fall back to the default, not to 'allow'."""
+    from ragassist import config as config_module
+
+    def explode(self, key, default=None):
+        raise RuntimeError("corrupt config")
+
+    monkeypatch.setattr(config_module.Config, "get", explode)
+    assert update.expected_remote() == update.GITHUB_REPO
+    assert update._is_expected_remote("/root/whatever.git") is False
+
+
+def test_a_git_suffix_is_dropped_only_when_comparing_local_paths():
+    """`/srv/mirror` and `/srv/mirror.git` name the same repository to git."""
+    assert update._is_expected_remote("/srv/mirror.git", "/srv/mirror") is True
+    assert update._is_expected_remote("/srv/mirror", "/srv/mirror.git") is True
+    # ...but a different directory is still refused.
+    assert update._is_expected_remote("/srv/other.git", "/srv/mirror") is False
+
+
+def test_remote_url_is_read_verbatim(checkout):
+    """The stored URL must survive intact, .git suffix included.
+
+    `_remote_url` used to strip a trailing ``.git`` while parsing. That was
+    meant for ssh URLs, but it also rewrote a local bare path: a remote stored
+    as ``/srv/mirror.git`` came back as ``/srv/mirror``, a different directory,
+    which then failed to match the configured remote and made every update
+    report the checkout as foreign.
+    """
+    work = checkout.work
+    run_git("remote", "set-url", "origin", "/srv/mirror.git", cwd=work)
+    assert update._remote_url(work) == "/srv/mirror.git"
+
+
+def test_the_refusal_names_the_configured_remote(checkout, monkeypatch):
+    """With an offline mirror set, blaming GitHub would point at the wrong repo."""
+    run_git("remote", "set-url", "origin", "https://github.com/other/x.git",
+            cwd=checkout.work)
+    from ragassist import config as config_module
+
+    monkeypatch.setattr(
+        config_module.Config, "get",
+        lambda self, key, default=None: "/root/mirror.git"
+        if key == update.REMOTE_KEY else default,
+    )
+    monkeypatch.setattr(update, "find_source_dir", lambda: checkout.work)
+    info = update.check()
+    assert info.method == update.METHOD_UNKNOWN
+    assert "https://github.com/other/x.git" in info.detail
+    assert "/root/mirror.git" in info.detail
+    assert update.GITHUB_REPO not in info.detail
 
 
 def test_foreign_repository_is_refused(tmp_path):
