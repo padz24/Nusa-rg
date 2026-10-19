@@ -8,6 +8,7 @@ so it appears immediately even when the LLM answers instantly.
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import threading
 import time
@@ -167,42 +168,105 @@ def heading(text: str) -> None:
 
 
 # ------------------------------------------------------------------- banner
-#: Emblem palette sampled from the logo description in BANNER.txt (hex in
-#: parentheses): the left stroke runs cyan to royal blue, the diagonal is
-#: electric blue, the right stroke is turquoise to mint, the star is gold,
-#: and the orbit arc fades cyan to mint. Navy marks the shadowed baseline.
-_GOLD = (248, 195, 92)        # #F8C35C
+#: Banner palette, sampled from the pixel-art reference: the blocky N runs
+#: cyan at the top to royal blue at the base, its staircase is electric blue
+#: and the right stroke fades turquoise to mint; the wordmark is cyan, the
+#: tagline turquoise, and the status row electric blue.
 _CYAN = (78, 197, 252)        # #4EC5FC
 _SKY = (47, 169, 240)         # cyan-blue gradient step
 _ELECTRIC = (31, 154, 238)    # #1F9AEE
 _ROYAL = (9, 74, 176)         # #094AB0
 _TURQUOISE = (55, 198, 198)   # #37C6C6
 _MINT = (64, 208, 192)        # #40D0C0
-_DEEP = (36, 110, 170)        # navy shadow on the right baseline
 
-#: A ribbon N with a small gold star above it and an orbit arc underneath.
-#: Each row is a tuple of (text, colour) segments; None leaves text plain.
-_EMBLEM = (
-    (("     ", None), ("✦", _GOLD)),
-    (("███╗", _CYAN), ("   ", None), ("██╗", _TURQUOISE)),
-    (("████╗", _SKY), ("  ", None), ("██║", _TURQUOISE)),
-    (("██╔", _ELECTRIC), ("██╗", _ELECTRIC), (" ", None), ("██║", _TURQUOISE)),
-    (("██║", _ROYAL), ("╚██╗", _ELECTRIC), ("██║", _MINT)),
-    (("██║ ", _ROYAL), ("╚", _ELECTRIC), ("████", _ELECTRIC), ("║", _MINT)),
-    (("╚═╝", _ROYAL), ("  ", None), ("╚═══╝", _DEEP)),
-    (("╰───", _CYAN), ("────", _TURQUOISE), ("──╯", _MINT)),
+#: 5-row pixel glyphs for the wordmark; "#" marks a filled cell. ``_wordmark``
+#: joins them into rows of exactly 34 columns, trailing blanks included.
+_WORDMARK_GLYPHS = {
+    "N": ("#  #", "## #", "# ##", "#  #", "#  #"),
+    "U": ("#  #", "#  #", "#  #", "#  #", "####"),
+    "S": ("####", "#   ", "####", "   #", "####"),
+    "A": ("####", "#  #", "####", "#  #", "#  #"),
+    "-": ("    ", "    ", "####", "    ", "    "),
+    "R": ("####", "#  #", "####", "# # ", "#  #"),
+    "G": ("####", "#   ", "# ##", "#  #", "####"),
+}
+
+
+def _wordmark(fill: str) -> tuple[str, ...]:
+    rows = [""] * 5
+    for position, letter in enumerate("NUSA-RG"):
+        if position:
+            rows = [row + " " for row in rows]
+        rows = [row + part for row, part in zip(rows, _WORDMARK_GLYPHS[letter])]
+    return tuple(row.replace("#", fill) for row in rows)
+
+
+_TAGLINE = "LOCAL PROJECT RAG  •  CODING ASSISTANT"
+_RULE = "─" * 42
+_STATUS = "─ [ PROJECT CONTEXT • LOCAL AI • READY ] ─"
+
+#: The blocky N of the reference banner (8 columns, 10 rows): thick left and
+#: right strokes with a two-cell staircase between them. Each row is a tuple
+#: of (text, colour) segments; None leaves text plain.
+_N_ART = (
+    (("████", _CYAN), ("  ", None), ("██", _CYAN)),
+    (("████", _CYAN), ("  ", None), ("██", _CYAN)),
+    (("██", _SKY), (" ", None), ("██", _ELECTRIC), (" ", None), ("██", _TURQUOISE)),
+    (("██", _SKY), (" ", None), ("██", _ELECTRIC), (" ", None), ("██", _TURQUOISE)),
+    (("██", _ELECTRIC), ("  ", None), ("████", _TURQUOISE)),
+    (("██", _ELECTRIC), ("  ", None), ("████", _MINT)),
+    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
+    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
+    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
+    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
 )
 
-#: The same emblem in ASCII, for terminals that cannot show block glyphs.
-_EMBLEM_ASCII = (
-    (("    ", None), ("*", _GOLD)),
-    (("##", _CYAN), ("   ", None), ("##", _TURQUOISE)),
-    (("###", _SKY), ("  ", None), ("##", _TURQUOISE)),
-    (("##", _ELECTRIC), (" #", _ELECTRIC), (" ", None), ("##", _TURQUOISE)),
-    (("##", _ROYAL), ("  ", None), ("###", _MINT)),
-    (("##", _ROYAL), ("   ", None), ("##", _MINT)),
-    (("\\", _CYAN), ("-------", _TURQUOISE), ("/", _MINT)),
+_N_ART_ASCII = tuple(
+    tuple((text.replace("█", "#"), colour) for text, colour in row)
+    for row in _N_ART
 )
+
+
+def _banner_variants():
+    """Compose the (wide, narrow) row sets for block and ASCII terminals."""
+    def right_block(wordmark, tagline, rule, status):
+        return [((row, _CYAN),) for row in wordmark] + [
+            (("", None),),
+            ((tagline, _TURQUOISE),),
+            (("", None),),
+            ((rule, _SKY),),
+            ((status, _ELECTRIC),),
+        ]
+
+    def compose(n_art, wordmark, bar, tagline, rule, status):
+        rows = right_block(wordmark, tagline, rule, status)
+        wide = [tuple(left) + (("  " + bar + "  ", _TURQUOISE),) + tuple(rest)
+                for left, rest in zip(n_art, rows)]
+        narrow = [tuple(rest) for rest in rows]
+        return tuple(wide), tuple(narrow)
+
+    blocks = compose(_N_ART, _wordmark("█"), "│", _TAGLINE, _RULE, _STATUS)
+    ascii_ = compose(
+        _N_ART_ASCII, _wordmark("#"), "|",
+        _TAGLINE.replace("•", "*"), _RULE.replace("─", "-"),
+        _STATUS.replace("─", "-").replace("•", "*"),
+    )
+    return blocks, ascii_
+
+
+(_EMBLEM, _EMBLEM_NARROW), (_EMBLEM_ASCII, _EMBLEM_ASCII_NARROW) = (
+    _banner_variants())
+
+#: The wide banner is 57 columns; anything narrower gets the wordmark block.
+_FULL_BANNER_MIN = 58
+
+
+def _terminal_columns() -> int:
+    """Terminal width in columns (COLUMNS wins, then the tty, then 80)."""
+    try:
+        return shutil.get_terminal_size((80, 24)).columns
+    except (AttributeError, ValueError):
+        return 80
 
 
 def _truecolour() -> bool:
@@ -222,14 +286,20 @@ def _foreground(rgb: tuple[int, int, int]) -> str:
 
 
 def banner() -> None:
-    """Print the NUSA-RG emblem: a ribbon N with a small star above it.
+    """Print the NUSA-RG banner: pixel N, wordmark, tagline, status row.
 
-    Colours follow BANNER.txt (cyan-blue-turquoise gradient, gold star) and
-    are dropped when output is piped, NO_COLOR is set, or --no-colour is
-    given; block glyphs fall back to ASCII outside a UTF-8 terminal.
+    The pixel emblem only fits beside the wordmark on terminals at least
+    ``_FULL_BANNER_MIN`` columns wide; anything narrower gets the wordmark
+    block on its own. Colours are dropped when output is piped, NO_COLOR is
+    set, or --no-colour is given, and block glyphs fall back to ASCII
+    outside a UTF-8 terminal.
     """
     encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
-    rows = _EMBLEM if "utf" in encoding else _EMBLEM_ASCII
+    utf8 = "utf" in encoding
+    if _terminal_columns() >= _FULL_BANNER_MIN:
+        rows = _EMBLEM if utf8 else _EMBLEM_ASCII
+    else:
+        rows = _EMBLEM_NARROW if utf8 else _EMBLEM_ASCII_NARROW
     for row in rows:
         print("  " + "".join(
             paint(text, _foreground(colour)) if colour else text
