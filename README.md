@@ -150,8 +150,22 @@ Every provider has a logo on the registry: `https://models.dev/logos/<id>.svg`.
 draws each one next to its provider — a terminal cannot show SVG, so the file
 is rasterised into Braille cells.
 
+Every entry is framed in a box and carries its own colour, picked from a
+palette by the provider id, so the list can be scanned by eye and the entries
+never run into each other:
+
+```text
+┌────────────────────────────────────────────────┐
+│ ⢀⣴⣾⣿⣿⣶⣄⠀  [ok] 302ai                      │
+│ ⣾⣿⣿⣿⣿⣿⣿⣧  302.AI                          │
+│ ⢻⣿⣿⣿⣿⣿⣿⡿  122 models                      │
+│ ⠀⠙⠿⣿⣿⡿⠟⠁  models.dev/logos/302ai.svg      │
+└────────────────────────────────────────────────┘
+```
+
 ```bash
-nusa-rg providers list          # every provider with its logo drawn
+nusa-rg providers list          # every provider, boxed and coloured
+nusa-rg providers list --limit 40
 nusa-rg providers show deepseek # the logo of one provider
 nusa-rg providers icon deepseek # just the logo, plus its address
 ```
@@ -487,7 +501,7 @@ resulting text as labelled, sanitised context.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 602 tests
+pytest                    # 606 tests
 python -m nusa_rg       # run without installing
 ```
 

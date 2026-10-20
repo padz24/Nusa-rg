@@ -12,6 +12,7 @@ import shutil
 import sys
 import threading
 import time
+import zlib
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - imported lazily to keep this module light
@@ -98,6 +99,11 @@ def paint(text: str, *codes: str) -> str:
     if not _COLOUR or not codes:
         return text
     return f"{''.join(codes)}{text}{RESET}"
+
+
+def visible_width(text: str) -> int:
+    """Length of ``text`` as the terminal shows it, escape codes excluded."""
+    return len(_ANSI.sub("", text))
 
 
 _ANSI = re.compile(r"\033\[[0-9;]*m")
@@ -335,6 +341,15 @@ _PURPLE = (139, 140, 246)       # #8b8cf6
 _YELLOW = (245, 185, 66)        # #f5b942
 _MODEL_TEXT = (156, 199, 245)   # #9cc7f5
 _SHINE = (226, 240, 255)        # #e2f0ff
+
+#: Accent colours handed out to catalogue providers. The same provider always
+#: gets the same colour, so the list can be scanned by colour as well as by
+#: name.
+_PROVIDER_ACCENTS = (
+    _TEAL, _PURPLE, _GREEN, _YELLOW, _MODEL_TEXT, _SHINE,
+    (255, 122, 122), (255, 168, 96), (120, 224, 200),
+    (206, 154, 255), (122, 196, 255), (232, 200, 120),
+)
 _CHIPS = {
     "index_empty": ((74, 58, 18), _YELLOW),      # #4a3a12 / #f5b942
     "index_ready": ((18, 61, 42), _GREEN),       # #123d2a / #4ade80
@@ -359,6 +374,7 @@ _LOGO = (
 #: Logo and typographic glyphs fall back to ASCII outside UTF-8 output.
 _ASCII = str.maketrans({
     "█": "#", "·": "*", "—": "-", "…": "~", "❯": ">", "◆": "*",
+    "┌": "+", "─": "-", "┐": "+", "│": "|", "└": "+", "┘": "+",
 })
 
 
@@ -370,6 +386,21 @@ def _utf8() -> bool:
 def _glyph(text: str) -> str:
     """Fold glyphs to ASCII when stdout cannot encode them."""
     return text if _utf8() else text.translate(_ASCII)
+
+
+def glyph(text: str) -> str:
+    """Fold box-drawing and block glyphs to ASCII when needed."""
+    return _glyph(text)
+
+
+def provider_accent(name: str) -> str:
+    """The colour code of a provider, stable for the same provider id.
+
+    The digest is CRC32 rather than ``hash()`` so the colour does not change
+    from run to run: the same provider keeps its colour for ever.
+    """
+    digest = zlib.crc32((name or "").encode("utf-8"))
+    return _foreground(_PROVIDER_ACCENTS[digest % len(_PROVIDER_ACCENTS)])
 
 
 def _terminal_columns() -> int:

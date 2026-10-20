@@ -243,3 +243,45 @@ def test_providers_icon_unknown_provider(runner):
     result = run(runner, ["providers", "icon", "skynet"])
     assert result.exit_code == 1
     assert "unknown provider" in result.output
+
+
+# ------------------------------------------------------------- box & colour
+def test_provider_list_frames_every_entry(runner, monkeypatch):
+    """One box per provider, so entries cannot run into each other."""
+    monkeypatch.delenv(logos.DISABLE_ENV, raising=False)
+    monkeypatch.setattr(logos, "svg_text", lambda name, timeout=15: SQUARE)
+
+    result = run(runner, ["providers", "list", "--search", "groq"])
+
+    assert result.exit_code == 0
+    assert "┌" in result.output
+    assert "│" in result.output
+    assert "└" in result.output
+    assert result.output.count("┌") == result.output.count("└")
+
+
+def test_provider_accents_are_stable_and_varied():
+    from nusa_rg import ui
+
+    assert ui.provider_accent("groq") == ui.provider_accent("groq")
+    assert ui.provider_accent("groq").startswith("\033[")
+    colours = {ui.provider_accent(f"provider-{number}") for number in range(40)}
+    assert len(colours) >= 8, "the palette must not collapse to a few colours"
+
+
+def test_box_glyphs_fold_to_ascii(monkeypatch):
+    from nusa_rg import ui
+
+    monkeypatch.setattr(ui, "_utf8", lambda: False)
+    assert ui.glyph("┌─┐│└┘") == "+-+|++"
+
+
+def test_visible_width_ignores_escape_codes():
+    from nusa_rg import ui
+
+    previous = ui._COLOUR
+    ui.set_colour(True)
+    try:
+        assert ui.visible_width(ui.paint("abc", ui.GREEN)) == 3
+    finally:
+        ui.set_colour(previous)

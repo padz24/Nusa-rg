@@ -1106,7 +1106,7 @@ def providers() -> None:
 @click.option("--search", "-s", default="", help="Filter by provider id or name.")
 @click.option("--all", "show_all", is_flag=True,
               help="Include providers without an OpenAI-compatible endpoint.")
-@click.option("--limit", type=int, default=40, show_default=True)
+@click.option("--limit", type=int, default=20, show_default=True)
 @click.option("--no-icons", is_flag=True,
               help="Skip the provider logos (no network access).")
 def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> None:
@@ -1122,10 +1122,14 @@ def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> N
 
     drawings = {} if no_icons else logos_mod.icons([entry.id for entry in rows])
     if drawings:
-        width = max((len(line) for drawing in drawings.values()
-                     for line in drawing), default=8)
-        for entry in rows:
-            _print_provider_card(entry, drawings.get(entry.id, []), width)
+        cards = [(entry, _provider_card_rows(entry, drawings.get(entry.id, [])))
+                 for entry in rows]
+        icon_width = max((ui.visible_width(left) for _, card in cards
+                          for left, _ in card), default=8)
+        text_width = max((ui.visible_width(right) for _, card in cards
+                          for _, right in card), default=0)
+        for entry, card in cards:
+            _print_provider_card(entry, card, icon_width, text_width)
     else:
         for entry in rows:
             _print_provider_row(entry)
@@ -1137,28 +1141,55 @@ def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> N
 
 
 def _print_provider_row(entry) -> None:
-    """One provider on a single line, with the name of its logo."""
+    """One provider on a single line, in its own colour."""
+    accent = ui.provider_accent(entry.id)
     mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
-    icon = ui.link(ui.paint(f"{entry.id}.svg", ui.GREY), entry.logo_url)
-    print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', ui.BOLD)}"
+    icon = ui.link(ui.paint(f"{entry.id}.svg", ui.DIM), entry.logo_url)
+    print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', accent, ui.BOLD)}"
           f"{entry.name[:30]:<32}{entry.model_count:>5} models  {icon}")
 
 
-def _print_provider_card(entry, drawing: list[str], width: int = 8) -> None:
-    """One provider with its logo drawn next to the details."""
+def _pad(text: str, width: int) -> str:
+    """Pad ``text`` on the right, ignoring escape codes."""
+    return text + " " * max(0, width - ui.visible_width(text))
+
+
+def _provider_card_rows(entry, drawing: list[str]) -> list[tuple[str, str]]:
+    """The (logo, text) pairs of one provider card, already coloured."""
+    accent = ui.provider_accent(entry.id)
     mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
     details = [
-        f"[{mark}] {ui.paint(entry.id, ui.BOLD)}",
+        f"[{mark}] {ui.paint(entry.id, accent, ui.BOLD)}",
         entry.name,
         f"{entry.model_count} models",
-        ui.link(entry.logo_url, entry.logo_url),
+        ui.link(ui.paint(entry.logo_url.replace("https://", ""), accent),
+                entry.logo_url),
     ]
+
+    rows: list[tuple[str, str]] = []
     for index in range(max(len(drawing), len(details))):
         left = drawing[index] if index < len(drawing) else ""
         if not drawing and index == 0:
-            left = ui.paint("no logo", ui.GREY)
+            left = ui.paint("no logo", ui.DIM)
+        elif left:
+            left = ui.paint(left, accent)
         right = details[index] if index < len(details) else ""
-        print(f"  {left:<{width}}  {right}")
+        rows.append((left, right))
+    return rows
+
+
+def _print_provider_card(entry, rows: list[tuple[str, str]],
+                         icon_width: int, text_width: int) -> None:
+    """One provider framed in a box, with its logo in its own colour."""
+    accent = ui.provider_accent(entry.id)
+    border = ui.glyph("─") * (icon_width + text_width + 4)
+    print(ui.paint(ui.glyph("┌") + border + ui.glyph("┐"), accent))
+    for left, right in rows:
+        print(ui.paint(ui.glyph("│"), accent) + " "
+              + _pad(left, icon_width) + "  "
+              + _pad(right, text_width) + " "
+              + ui.paint(ui.glyph("│"), accent))
+    print(ui.paint(ui.glyph("└") + border + ui.glyph("┘"), accent))
 
 
 @providers.command("show")
@@ -1173,8 +1204,9 @@ def providers_show(provider_id: str) -> None:
         sys.exit(1)
     ui.heading(provider.name)
     drawing = logos_mod.icon(provider.id)
+    accent = ui.provider_accent(provider.id)
     for line in drawing:
-        print("  " + line)
+        print("  " + ui.paint(line, accent))
     print(f"  id          {provider.id}")
     print(f"  icon        {ui.link(provider.logo_url, provider.logo_url)}")
     print(f"  endpoint    {provider.api or '(not published - set api_base_url)'}")
@@ -1231,9 +1263,10 @@ def providers_icon(provider_id: str) -> None:
                  "Try: nusa-rg providers list --search <text>")
         sys.exit(1)
     drawing = logos_mod.icon(provider.id)
+    accent = ui.provider_accent(provider.id)
     if drawing:
         for line in drawing:
-            print("  " + line)
+            print("  " + ui.paint(line, accent))
     else:
         ui.warn("the logo of this provider could not be drawn")
     print(f"  {ui.link(provider.logo_url, provider.logo_url)}")
