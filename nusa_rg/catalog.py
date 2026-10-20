@@ -19,6 +19,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -27,6 +28,9 @@ from pathlib import Path
 from . import paths
 
 CATALOG_URL = "https://models.dev/api.json"
+
+#: Provider logos live next to the registry: one SVG per provider id.
+LOGO_BASE_URL = "https://models.dev/logos"
 
 #: Bundled snapshot shipped with the package.
 BUNDLED_PATH = Path(__file__).resolve().parent / "data" / "catalog.json.gz"
@@ -90,6 +94,7 @@ class Provider:
     compatible: bool
     default_model: str
     models: dict[str, dict]
+    logo: str = ""
 
     @property
     def model_count(self) -> int:
@@ -99,6 +104,20 @@ class Provider:
     def selectable(self) -> bool:
         """True when this provider can be reached by the built-in client."""
         return self.compatible and bool(self.api)
+
+    @property
+    def logo_url(self) -> str:
+        """Where the provider logo lives.
+
+        The registry serves one SVG per provider id, so the address can always
+        be derived; a snapshot that stored its own URL wins over the guess.
+        """
+        return self.logo or logo_url(self.id)
+
+
+def logo_url(provider_id: str) -> str:
+    """Address of one provider logo on models.dev."""
+    return f"{LOGO_BASE_URL}/{urllib.parse.quote(provider_id.strip(), safe='')}.svg"
 
 
 def _pick_default_model(models: dict[str, dict]) -> str:
@@ -174,6 +193,7 @@ def trim_catalog(raw: dict, *, source: str = CATALOG_URL, fetched_at: str = "") 
             "doc": str(provider.get("doc") or ""),
             "compatible": provider.get("npm") in COMPATIBLE_NPM,
             "default_model": _pick_default_model(models),
+            "logo": logo_url(provider_id),
             "models": models,
         }
     return {
@@ -226,6 +246,7 @@ class Catalog:
                 compatible=bool(entry.get("compatible")),
                 default_model=str(entry.get("default_model") or ""),
                 models=dict(entry.get("models") or {}),
+                logo=str(entry.get("logo") or ""),
             )
 
     # ------------------------------------------------------------- lookups
@@ -357,6 +378,7 @@ def refresh(url: str = CATALOG_URL, timeout: int = 45) -> Catalog:
 
 
 __all__ = [
-    "CATALOG_URL", "BUNDLED_PATH", "Catalog", "CatalogError", "Provider",
-    "fetch_raw", "load", "load_catalog", "refresh", "resolve_url", "trim_catalog",
+    "CATALOG_URL", "BUNDLED_PATH", "LOGO_BASE_URL", "Catalog", "CatalogError",
+    "Provider", "fetch_raw", "load", "load_catalog", "logo_url",
+    "refresh", "resolve_url", "trim_catalog",
 ]

@@ -22,6 +22,7 @@ Inside a session,
 .BR /exit ,
 .BR /quit ,
 .BR /clear ,
+.BR /session ,
 .BR "/caveman [on|off]" ,
 and
 .B /help
@@ -38,14 +39,26 @@ Options:
 .BR \-p ", " \-\-project " \fIPATH\fR"
 .B \-\-no\-rag
 skip retrieval;
-.B \-\-stream
-stream the API response;
+.BR \-\-stream " / " \-\-no\-stream
+stream the API response or wait for the whole answer;
 .B \-\-index " / " \-\-no\-index
 control automatic indexing;
+.BR \-\-session ", " \-\-session\-id " \fIID\fR"
+resume or create a saved conversation;
 .B \-\-caveman
 answer in telegraphic style for this session;
 .B \-\-plain
 print raw Markdown.
+.TP
+.B session \fISUBCOMMAND\fR [\fIARGS\fR]
+Manage saved conversations. Subcommands are
+.BR list ,
+.BR show " \fIID\fR [\fB\-\-last\fR \fIN\fR],"
+.BR new " [\fIID\fR] [\fB\-\-project\fR \fIPATH\fR],"
+and
+.BR delete " \fIID\fR [\fB\-\-yes\fR]."
+Sessions are stored under
+.IR ~/.nusa\-rg/sessions/ .
 .TP
 .B run [options] \fICOMMAND\fR [\fIARG\fR ...]
 Run a terminal command. When
@@ -70,10 +83,14 @@ for this run;
 .BR \-p ", " \-\-project " \fIPATH\fR" ","
 .BR \-\-no\-rag ", "
 .BR \-\-stream ", "
+.BR \-\-session " \fIID\fR,"
 .BR \-\-caveman ", "
 .BR \-\-plain
 as for
 .BR chat .
+The session option requires
+.B \-\-ask
+and appends the question and answer to the named conversation.
 The exit code is the command's own, so
 .B run
 composes with scripts.
@@ -121,16 +138,25 @@ Print the resolved path of every state file.
 .TP
 .B providers \fISUBCOMMAND\fR
 .TQ
-.B providers list [\fB\-\-search\fR \fITEXT\fR] [\fB\-\-all\fR] [\fB\-\-limit\fR \fIN\fR]
-List the bundled catalogue of 200+ providers with their model counts. Only
+.B providers list [\fB\-\-search\fR \fITEXT\fR] [\fB\-\-all\fR] [\fB\-\-limit\fR \fIN\fR] [\fB\-\-no\-icons\fR]
+List the bundled catalogue of 200+ providers with their model counts and the
+logo of each one, drawn next to the details. Only
 OpenAI chat\-completions compatible providers are shown unless
 .B \-\-all
 is given; the others are listed for their key names and documentation but
-cannot be called directly.
+cannot be called directly. With
+.B \-\-no\-icons
+the logos are skipped and nothing is downloaded.
 .TQ
 .B providers show \fIPROVIDER\fR
 Print one provider's endpoint, key environment variable, model count, and
 default model, plus the command that switches to it.
+.TQ
+.B providers icon \fIPROVIDER\fR
+Draw the logo of one provider and print its address. The registry serves one
+SVG per provider id at
+.IR https://models.dev/logos/ {PROVIDER} .svg ;
+a terminal cannot show SVG, so the file is rasterised into Braille cells.
 .TQ
 .B providers models \fIPROVIDER\fR [\fB\-\-search\fR \fITEXT\fR] [\fB\-\-limit\fR \fIN\fR]
 List the models a provider hosts, newest first, with context size and price
@@ -146,7 +172,8 @@ Config, credentials and the index in ~/.nusa\-rg are never touched.
 An installation made from a package manager cannot self\-update; the command
 reports that and points at \fBpkg upgrade\fR. An update runs \fBgit reset \-\-hard\fR
 against \fBorigin\fR, so a checkout whose remote is not
-\fBgithub.com/PADZ\-PRD/RAG\-termux\-cli\fR is refused unless
+\fBgithub.com/padz24/Nusa\-rg\fR (or the legacy
+\fBgithub.com/PADZ\-PRD/RAG\-termux\-cli\fR) is refused unless
 \fBupdate_remote\fR names it, as in
 \fBrad\-assist config set update_remote ~/RAG\-termux\-cli.git\fR for an offline
 mirror. A dirty tree or a diverged branch stops the update unless
@@ -184,6 +211,11 @@ Override the state directory. Default
 .B NO_COLOR
 When set, disables all ANSI colour output.
 .TP
+.B NUSA_RG_NO_LOGOS
+When set, the provider logos are not fetched and the catalogue is printed in
+its compact one-line form. The same happens when models.dev cannot be
+reached.
+.TP
 .B GROQ_API_KEY, OPENAI_API_KEY, ...
 Keys for catalogue providers are read from the environment variables models.dev
 lists (shown by
@@ -208,6 +240,10 @@ SQLite FTS5 project index. Mode 0600.
 Provider catalogue written by
 .BR "nusa\-rg providers refresh" .
 Optional; when present it overrides the bundled snapshot. Mode 0600.
+.TP
+.I ~/.nusa\-rg/logos/
+Provider logos fetched from models.dev and drawn in the terminal, one SVG per
+provider id. Mode 0600.
 .TP
 .I ~/.nusa\-rg/logs/app.log
 Operational log. Metadata only, mode 0600, rotated at 10 MB keeping 5 archives.
@@ -239,6 +275,9 @@ Start an interactive session.
 .B nusa\-rg chat "explain this traceback"
 Answer a single question.
 .TP
+.B nusa\-rg chat \-\-session fix\-auth
+Resume a saved conversation.
+.TP
 .B nusa\-rg providers list
 Browse the bundled provider catalogue.
 .TP
@@ -263,4 +302,4 @@ Verify the installation.
 .BR llama (1),
 .BR termux\-info (1)
 .SH BUGS
-Report issues at https://github.com/PADZ-PRD/RAG\-termux\-cli/issues
+Report issues at https://github.com/padz24/Nusa\-rg/issues

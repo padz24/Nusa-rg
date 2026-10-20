@@ -8,7 +8,7 @@ error raised at the end lists what each one said.
 
 from __future__ import annotations
 
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 
 from .base import LLMClient, LLMError, LLMResponse, Usage
 
@@ -39,13 +39,15 @@ class FailoverClient(LLMClient):
         context: str = "",
         system: str = "",
         stream: bool = False,
+        history: Sequence[dict[str, str]] | None = None,
     ) -> LLMResponse:
         failures: list[tuple[str, LLMError]] = []
+        options: dict = {"context": context, "system": system, "stream": stream}
+        if history:
+            options["history"] = history
         for position, (label, client) in enumerate(self.clients):
             try:
-                response = client.generate(
-                    prompt, context=context, system=system, stream=stream
-                )
+                response = client.generate(prompt, **options)
             except LLMError as exc:
                 failures.append((label, exc))
                 continue
@@ -65,6 +67,7 @@ class FailoverClient(LLMClient):
 
     def iter_stream(self, prompt: str, *, context: str = "",
                     system: str = "",
+                    history: Sequence[dict[str, str]] | None = None,
                     on_usage: Callable[[Usage], None] | None = None
                     ) -> Iterator[str]:
         """Stream from the first provider that produces a delta.
@@ -76,15 +79,17 @@ class FailoverClient(LLMClient):
         stream.
         """
         failures: list[tuple[str, LLMError]] = []
+        options: dict = {"context": context, "system": system}
+        if history:
+            options["history"] = history
         for label, client in self.clients:
             if not self._streams(client):
                 continue
             started = False
             reported: list[Usage] = []
             try:
-                for delta in client.iter_stream(prompt, context=context,
-                                                system=system,
-                                                on_usage=reported.append):
+                for delta in client.iter_stream(prompt, on_usage=reported.append,
+                                                **options):
                     started = True
                     yield delta
             except LLMError as exc:

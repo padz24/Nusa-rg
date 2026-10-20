@@ -44,6 +44,16 @@ def catalog_path() -> Path:
     return base_dir() / "catalog.json"
 
 
+def sessions_dir() -> Path:
+    """Saved chat sessions, one JSON document per session id."""
+    return base_dir() / "sessions"
+
+
+def logos_dir() -> Path:
+    """Provider logos downloaded from models.dev, one SVG per provider id."""
+    return base_dir() / "logos"
+
+
 def log_dir() -> Path:
     return base_dir() / "logs"
 

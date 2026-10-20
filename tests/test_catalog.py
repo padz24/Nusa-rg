@@ -123,6 +123,29 @@ def test_bundled_snapshot_is_shipped():
     assert groq.api == "https://api.groq.com/openai/v1"
 
 
+# --------------------------------------------------------------------- logos
+def test_logo_url_follows_the_registry_pattern():
+    assert catalog.logo_url("anthropic") == \
+        "https://models.dev/logos/anthropic.svg"
+    assert catalog.logo_url(" 302ai ") == "https://models.dev/logos/302ai.svg"
+
+
+def test_trim_catalog_records_the_logo_of_every_provider():
+    document = catalog.trim_catalog(SYNTHETIC)
+    assert document["providers"]["groq"]["logo"] == \
+        "https://models.dev/logos/groq.svg"
+    assert document["providers"]["anthropic"]["logo"] == \
+        "https://models.dev/logos/anthropic.svg"
+
+
+def test_provider_logo_falls_back_to_the_derived_url():
+    """A snapshot written before logos existed still resolves an icon."""
+    provider = catalog.Provider(id="groq", name="Groq", api="", env=[],
+                                doc="", compatible=True, default_model="",
+                                models={})
+    assert provider.logo_url == "https://models.dev/logos/groq.svg"
+
+
 # -------------------------------------------------------------------- lookups
 def test_search_and_model_filters():
     loaded = catalog.Catalog(catalog.trim_catalog(SYNTHETIC))

@@ -14,6 +14,8 @@ from . import __version__, crypto, paths, render, ui
 from . import catalog as catalog_mod
 from . import command as command_mod
 from . import live as live_mod
+from . import logos as logos_mod
+from . import session as session_mod
 from . import style as style_mod
 from . import update as update_mod
 from .command import CommandError
@@ -32,6 +34,7 @@ EPILOG = """
 Examples:
   nusa-rg index ~/projects/my-app       Index a project directory
   nusa-rg chat                          Start an interactive session
+  nusa-rg chat --session fix-auth       Resume a saved session
   nusa-rg chat "explain this traceback" One-shot question, then exit
   nusa-rg providers list --search qwen  Browse 200+ provider entries
   nusa-rg config set provider deepseek  Switch provider in one command
@@ -41,7 +44,8 @@ Examples:
   nusa-rg status                         Show index and provider state
 
 In chat, type /exit (or Ctrl+D) to quit, /clear to start a new topic,
-/caveman to toggle terse answers, and !command to run a terminal command.
+/session to manage saved conversations, /caveman to toggle terse answers,
+and !command to run a terminal command.
 """
 
 
@@ -87,7 +91,8 @@ def _print_chat_help() -> None:
     for command, description in (
         ("/exit", "leave the session (Ctrl+D works too)"),
         ("/quit", "alias for /exit"),
-        ("/clear", "forget the current topic and start over"),
+        ("/clear", "forget the current topic and clear saved history"),
+        ("/session [show|list|new|use|delete]", "manage persistent chat sessions"),
         ("/caveman [on|off]", "toggle terse answers that save output tokens"),
         ("!command", "run a terminal command; its output becomes context"),
         ("/help", "show this list"),
@@ -111,11 +116,14 @@ def _run_update(force: bool = False) -> None:
             ui.info("run: pkg upgrade termux-nusa-rg")
         return
 
+    latest = info.remote_version
+    if latest is None and info.remote_head:
+        latest = f"commit {info.remote_head[:12]}"
     print(f"  installed  {info.installed_version}")
-    print(f"  latest     {info.remote_version or 'unknown'}")
+    print(f"  latest     {latest or 'unknown'}")
     print(f"  checkout   {info.source_dir}")
 
-    if info.remote_version is None:
+    if info.remote_version is None and info.available is None:
         ui.error(info.detail or "could not reach the remote")
         return
     if not info.available:
@@ -174,6 +182,80 @@ def _read_multi_line() -> str:
     return "\n".join(lines)
 
 
+def _session_id_callback(ctx, param, value):
+    """Validate a session id at parse time so bad ids fail before any work."""
+    if value is None:
+        return None
+    try:
+        return session_mod.validate_id(value)
+    except session_mod.SessionError as exc:
+        raise click.BadParameter(str(exc)) from exc
+
+
+def _history_turns(engine: CoreEngine) -> int:
+    """Read the history window, tolerating an older config without the key."""
+    try:
+        return max(0, int(engine.config.get("session_history_turns", 10) or 0))
+    except (TypeError, ValueError):
+        return session_mod.DEFAULT_HISTORY_TURNS
+
+
+def _session_history(engine: CoreEngine, session) -> list[dict[str, str]] | None:
+    if session is None:
+        return None
+    return session.history(max_turns=_history_turns(engine))
+
+
+def _save_session(store, session) -> bool:
+    """Persist a session without turning a disk error into a traceback."""
+    if store is None or session is None:
+        return False
+    try:
+        store.save(session)
+        return True
+    except session_mod.SessionError as exc:
+        ui.error(f"session not saved: {exc}")
+        return False
+
+
+def _format_stamp(value: str) -> str:
+    """Render an ISO-8601 UTC timestamp compactly for the terminal."""
+    return value.replace("T", " ").replace("Z", "")[:16] if value else "unknown"
+
+
+def _print_session(session, *, show_messages: bool = False,
+                   last: int | None = None) -> None:
+    ui.heading(f"Session {session.id}")
+    print(f"  created  {_format_stamp(session.created_at)}")
+    print(f"  updated  {_format_stamp(session.updated_at)}")
+    print(f"  turns    {session.turns}")
+    print(f"  style    {session.style or 'configured default'}")
+    print(f"  project  {session.project or '(current project)'}")
+    print(f"  path     {session.path or session_mod.SessionStore().path(session.id)}")
+    if not show_messages or not session.messages:
+        return
+    print()
+    messages = session.messages if last is None else session.messages[-max(1, last):]
+    for item in messages:
+        label = "you" if item["role"] == "user" else "assistant"
+        body = item["content"].strip()
+        lines = body.splitlines() or [""]
+        print(f"  {label}: {lines[0]}")
+        for line in lines[1:]:
+            print(f"  {' ' * len(label)}  {line}")
+
+
+def _print_sessions(sessions) -> None:
+    if not sessions:
+        ui.info("no saved sessions")
+        return
+    ui.heading(f"Sessions ({len(sessions)})")
+    for item in sessions:
+        print(f"  {ui.paint(f'{item.id:<26}', ui.BOLD)}"
+              f"{item.turns:>3} turn(s)  {_format_stamp(item.updated_at):<16}  "
+              f"{item.title}")
+
+
 @main.command()
 @click.argument("message", required=False)
 @click.option("--project", "-p", default=None, help="Project directory to index first.")
@@ -190,25 +272,63 @@ def _read_multi_line() -> str:
               help="Index the project automatically if it is missing or stale.")
 @click.option("--caveman", is_flag=True,
               help="Answer in telegraphic style to cut output tokens (also /caveman).")
+@click.option("--session", "--session-id", "session_id", default=None,
+              callback=_session_id_callback,
+              help="Resume or create a named chat session.")
 def chat(message: str | None, project: str | None, no_rag: bool,
           stream: bool, no_stream: bool, markdown: bool, plain: bool,
-          do_index: bool, caveman: bool) -> None:
+          do_index: bool, caveman: bool, session_id: str | None) -> None:
     """Start an interactive chat session, or answer a single message."""
     engine = CoreEngine()
     stream = _resolve_stream(engine, stream, no_stream)
     session_style = "caveman" if caveman else None
 
+    store = None
+    session = None
     target = project or engine.config.project_path()
+    if session_id:
+        store = session_mod.SessionStore()
+        try:
+            session = store.open(
+                session_id,
+                project=target or "",
+                style=session_style or "",
+            )
+        except session_mod.SessionError as exc:
+            ui.error(str(exc))
+            engine.close()
+            sys.exit(2)
+
+        if project and session.project != target:
+            session.project = target
+            _save_session(store, session)
+        if not target and session.project:
+            target = session.project
+        if session.messages:
+            ui.info(f"resumed session {session.id} ({session.turns} turn(s))")
+        else:
+            ui.info(f"session {session.id}")
+        session_style = session.style or session_style
+        if session_style and session.style != session_style:
+            session.set_style(session_style)
+            _save_session(store, session)
+
     if target and do_index and not no_rag:
         _auto_index(engine, target)
 
+    history = _session_history(engine, session)
     if message:
-        _single_turn(engine, message, no_rag=no_rag, stream=stream,
-                     plain=plain, markdown=markdown, style=session_style)
+        turn = _single_turn(engine, message, no_rag=no_rag, stream=stream,
+                            plain=plain, markdown=markdown, style=session_style,
+                            history=history)
+        if session is not None and store is not None and turn is not None:
+            session.add_turn(message, turn.answer)
+            _save_session(store, session)
         return
 
     _interactive_loop(engine, no_rag=no_rag, stream=stream,
-                      plain=plain, markdown=markdown, style=session_style)
+                      plain=plain, markdown=markdown, style=session_style,
+                      session=session, store=store, project=target or "")
 
 
 def _auto_index(engine: CoreEngine, target: str) -> None:
@@ -268,7 +388,8 @@ def _resolve_stream(engine: CoreEngine, stream: bool, no_stream: bool) -> bool:
 
 def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
               plain: bool, markdown: bool, style: str | None = None,
-              command_output: str = "", lead: str = "", gap: bool = False):
+              command_output: str = "", history: list[dict[str, str]] | None = None,
+              lead: str = "", gap: bool = False):
     """Ask the engine, print the context and the answer, and return the turn.
 
     With ``stream`` and an engine that has the live hooks, the answer is printed
@@ -278,6 +399,8 @@ def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
     options: dict = {"stream": stream, "skip_retrieval": no_rag, "style": style}
     if command_output:
         options["command_output"] = command_output
+    if history:
+        options["history"] = history
 
     if stream and live_mod.supports_live(engine):
         live = live_mod.LiveTurn(show_retrieval=_print_retrieval, emit=_emit,
@@ -310,15 +433,18 @@ def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
 
 def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool,
                  plain: bool = False, markdown: bool = True,
-                 style: str | None = None) -> None:
+                 style: str | None = None,
+                 history: list[dict[str, str]] | None = None):
     ui.heading(f"nusa-rg {__version__}")
     try:
-        _run_turn(engine, message, stream=stream, no_rag=no_rag, plain=plain,
-                  markdown=markdown, style=style, gap=True)
+        return _run_turn(engine, message, stream=stream, no_rag=no_rag,
+                         plain=plain, markdown=markdown, style=style,
+                         history=history, gap=True)
     except LLMError as exc:
         ui.error(str(exc))
-        return
-    engine.close()
+        return None
+    finally:
+        engine.close()
 
 
 def _run_terminal_command(text: str, settings: Config, *, use_rtk: bool | None = None):
@@ -379,9 +505,99 @@ def _toggle_style(settings: Config, command: str, current: str | None) -> str:
     return chosen
 
 
+def _session_usage() -> None:
+    ui.heading("Session commands")
+    for command, description in (
+        ("/session [show [id]]", "show the active or a saved session"),
+        ("/session list", "list saved sessions"),
+        ("/session new [id]", "start a new session (id is generated when omitted)"),
+        ("/session use <id>", "switch to a saved session"),
+        ("/session delete <id> --yes", "delete a saved session"),
+    ):
+        print(f"  {ui.paint(command, ui.BOLD)}  {description}")
+
+
+def _session_command(args: list[str], session, store, style: str | None,
+                     project: str):
+    """Execute one ``/session`` subcommand and return the new state."""
+    store = store or session_mod.SessionStore()
+    action = args[0].lower() if args else "show"
+    rest = args[1:]
+
+    if action in ("help", "?"):
+        _session_usage()
+        return session, store, style
+
+    if action == "list":
+        _print_sessions(store.list())
+        return session, store, style
+
+    if action in ("show", "info"):
+        target = session
+        if rest:
+            try:
+                target = store.load(rest[0])
+            except session_mod.SessionError as exc:
+                ui.error(str(exc))
+                return session, store, style
+        if target is None:
+            ui.info("no active session; start one with /session new [id]")
+        else:
+            _print_session(target)
+        return session, store, style
+
+    if action == "new":
+        requested = rest[0] if rest else None
+        try:
+            new = store.create(requested, project=project, style=style or "")
+        except session_mod.SessionError as exc:
+            ui.error(str(exc))
+            return session, store, style
+        ui.success(f"session {new.id} created")
+        return new, store, new.style or style
+
+    if action in ("use", "open", "resume"):
+        if not rest:
+            ui.error("usage: /session use <id>")
+            return session, store, style
+        try:
+            new = store.load(rest[0])
+        except session_mod.SessionError as exc:
+            ui.error(str(exc))
+            return session, store, style
+        effective_style = new.style or style
+        if effective_style and new.style != effective_style:
+            new.set_style(effective_style)
+            _save_session(store, new)
+        ui.success(f"session {new.id} ({new.turns} turn(s))")
+        return new, store, effective_style
+
+    if action in ("delete", "rm"):
+        if not rest:
+            ui.error("usage: /session delete <id> --yes")
+            return session, store, style
+        target_id = rest[0]
+        if "--yes" not in rest[1:] and "-y" not in rest[1:]:
+            ui.error(f"refusing to delete session '{target_id}' without --yes")
+            return session, store, style
+        try:
+            store.delete(target_id)
+        except session_mod.SessionError as exc:
+            ui.error(str(exc))
+            return session, store, style
+        ui.success(f"deleted session {target_id}")
+        if session is not None and session.id == target_id:
+            session = None
+        return session, store, style
+
+    _session_usage()
+    return session, store, style
+
+
 def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       plain: bool = False, markdown: bool = True,
-                      style: str | None = None) -> None:
+                      style: str | None = None, session=None, store=None,
+                      project: str = "") -> None:
     facts = ui.banner()
     ui.chat_hints(index_empty=not facts.index_ready and not no_rag)
 
@@ -406,7 +622,12 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             break
         if command in CLEAR_COMMANDS:
             pending_command = ""
-            ui.info("context cleared")
+            if session is not None and store is not None:
+                session.clear()
+                _save_session(store, session)
+                ui.info("context cleared (session history emptied)")
+            else:
+                ui.info("context cleared")
             continue
         if command in HELP_COMMANDS:
             _print_chat_help()
@@ -414,9 +635,19 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
         if command in UPDATE_COMMANDS:
             _run_update()
             continue
+
+        parts = raw.split()
+        if parts and parts[0].lower() == "/session":
+            session, store, session_style = _session_command(
+                parts[1:], session, store, session_style, project)
+            continue
+
         words = command.split()
         if words and words[0] in STYLE_COMMANDS:
             session_style = _toggle_style(engine.config, command, session_style)
+            if session is not None and store is not None:
+                session.set_style(session_style)
+                _save_session(store, session)
             continue
         if raw.startswith("!"):
             pending_command = _capture_command(engine.config, raw[1:].strip()) \
@@ -430,6 +661,7 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             turn = _run_turn(engine, raw, stream=stream, no_rag=no_rag,
                              plain=plain, markdown=markdown, style=session_style,
                              command_output=pending_command,
+                             history=_session_history(engine, session),
                              lead=ui.assistant_prompt())
         except LLMError as exc:
             ui.error(str(exc))
@@ -440,6 +672,9 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             continue
 
         pending_command = ""
+        if session is not None and store is not None:
+            session.add_turn(raw, turn.answer)
+            _save_session(store, session)
         if turn.response.used_fallback:
             ui.info(f"answered via fallback provider: {turn.response.provider}")
         usage = turn.response.usage
@@ -449,11 +684,75 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
     engine.close()
 
 
+# ------------------------------------------------------------------- session
+@main.group()
+def session() -> None:
+    """Manage saved chat sessions."""
+
+
+@session.command("list")
+def session_list() -> None:
+    """List saved sessions, newest first."""
+    _print_sessions(session_mod.SessionStore().list())
+
+
+@session.command("new")
+@click.argument("session_id", required=False,
+                callback=_session_id_callback)
+@click.option("--project", "-p", default=None,
+              help="Project path to remember with this session.")
+def session_new(session_id: str | None, project: str | None) -> None:
+    """Create an empty session and print its id."""
+    try:
+        created = session_mod.SessionStore().create(
+            session_id, project=project or "")
+    except session_mod.SessionError as exc:
+        ui.error(str(exc))
+        sys.exit(1)
+    ui.success(f"session {created.id} created")
+    print(f"  path  {created.path}")
+    ui.info(f"resume with: nusa-rg chat --session {created.id}")
+
+
+@session.command("show")
+@click.argument("session_id", callback=_session_id_callback)
+@click.option("--last", type=click.IntRange(min=1), default=None,
+              help="Show only the last N messages (default: all).")
+def session_show(session_id: str, last: int | None) -> None:
+    """Print one session's metadata and recent turns."""
+    try:
+        saved = session_mod.SessionStore().load(session_id)
+    except session_mod.SessionError as exc:
+        ui.error(str(exc))
+        sys.exit(1)
+    _print_session(saved, show_messages=True, last=last)
+
+
+@session.command("delete")
+@click.argument("session_id", callback=_session_id_callback)
+@click.option("--yes", is_flag=True,
+              help="Confirm permanent deletion.")
+def session_delete(session_id: str, yes: bool) -> None:
+    """Delete a saved session."""
+    if not yes:
+        ui.error(f"refusing to delete session '{session_id}' without --yes")
+        sys.exit(2)
+    try:
+        session_mod.SessionStore().delete(session_id)
+    except session_mod.SessionError as exc:
+        ui.error(str(exc))
+        sys.exit(1)
+    ui.success(f"deleted session {session_id}")
+
+
 # ---------------------------------------------------------------------- run
 @main.command("run")
 @click.argument("command", nargs=-1, required=True)
 @click.option("--ask", "-a", "question", default=None,
               help="Ask a question with the command output as context.")
+@click.option("--session", "--session-id", "session_id", default=None,
+              callback=_session_id_callback,
+              help="Append this question to a named chat session (requires --ask).")
 @click.option("--raw", is_flag=True, help="Do not route the command through rtk.")
 @click.option("--timeout", type=int, default=None,
               help="Seconds before the command is stopped (default: command_timeout).")
@@ -469,18 +768,33 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
 def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
             timeout: int | None, project: str | None, no_rag: bool,
             stream: bool, no_stream: bool, caveman: bool, plain: bool,
-            markdown: bool) -> None:
+            markdown: bool, session_id: str | None) -> None:
     """Run a terminal command (through rtk when installed).
 
     \b
     Examples:
       nusa-rg run git status
       nusa-rg run --ask "what broke?" pytest -x
+      nusa-rg run --session debug --ask "what broke?" pytest -x
       nusa-rg run "git diff --stat"
 
     The exit code is the command's own, so it composes with scripts.
     """
     settings = Config()
+    if session_id and not question:
+        ui.error("--session requires --ask; a session stores question/answer turns")
+        sys.exit(2)
+
+    session_store = None
+    chat_session = None
+    if session_id:
+        session_store = session_mod.SessionStore()
+        try:
+            chat_session = session_store.open(session_id,
+                                              project=project or "")
+        except session_mod.SessionError as exc:
+            ui.error(str(exc))
+            sys.exit(2)
     if len(command) == 1:
         # A single quoted argument may carry the whole command line.
         try:
@@ -515,16 +829,29 @@ def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
     engine = CoreEngine(settings)
     stream = _resolve_stream(engine, stream, no_stream)
     target = project or engine.config.project_path()
+    if not target and chat_session is not None:
+        target = chat_session.project
+    session_style = "caveman" if caveman else (
+        chat_session.style if chat_session is not None else None)
+    if chat_session is not None and session_style \
+            and chat_session.style != session_style:
+        chat_session.set_style(session_style)
+        _save_session(session_store, chat_session)
     if target and not no_rag:
         _auto_index(engine, target)
     try:
-        _run_turn(engine, question, stream=stream, no_rag=no_rag, plain=plain,
-                  markdown=markdown, style="caveman" if caveman else None,
-                  command_output=result.for_prompt(), gap=True)
+        turn = _run_turn(
+            engine, question, stream=stream, no_rag=no_rag, plain=plain,
+            markdown=markdown, style=session_style,
+            command_output=result.for_prompt(),
+            history=_session_history(engine, chat_session), gap=True)
     except LLMError as exc:
         ui.error(str(exc))
         engine.close()
         sys.exit(1)
+    if chat_session is not None and session_store is not None:
+        chat_session.add_turn(question, turn.answer)
+        _save_session(session_store, chat_session)
     engine.close()
 
 
@@ -738,6 +1065,8 @@ def config_path_cmd() -> None:
     for label, value in (
         ("config", paths.config_path()),
         ("index", paths.index_db_path()),
+        ("sessions", paths.sessions_dir()),
+        ("logos", paths.logos_dir()),
         ("keystore", paths.keystore_path()),
         ("catalog", paths.catalog_path()),
         ("log", paths.app_log_path()),
@@ -755,6 +1084,19 @@ def _load_catalog() -> "catalog_mod.Catalog":
         sys.exit(1)
 
 
+def _provider_icon(provider_id: str) -> str:
+    """Logo URL of a catalogue provider, empty when the id is unknown."""
+    if not provider_id:
+        return ""
+    try:
+        entry = catalog_mod.load_catalog().get(provider_id)
+    except catalog_mod.CatalogError:
+        return ""
+    if entry is None:
+        return ""
+    return ui.link(entry.logo_url, entry.logo_url)
+
+
 @main.group()
 def providers() -> None:
     """Browse the bundled catalogue of 200+ providers and their models."""
@@ -765,23 +1107,58 @@ def providers() -> None:
 @click.option("--all", "show_all", is_flag=True,
               help="Include providers without an OpenAI-compatible endpoint.")
 @click.option("--limit", type=int, default=40, show_default=True)
-def providers_list(search: str, show_all: bool, limit: int) -> None:
+@click.option("--no-icons", is_flag=True,
+              help="Skip the provider logos (no network access).")
+def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> None:
     """List providers; only ready-to-use ones by default."""
     catalogue = _load_catalog()
     total, models = catalogue.counts()
     ready = sum(1 for entry in catalogue.providers.values() if entry.selectable)
     ui.heading(f"Providers ({total} listed, {ready} ready to use)")
     ui.info(f"snapshot: {catalogue.fetched_at or 'bundled'} | "
-            f"{models} models in total")
-    rows = catalogue.search(search, compatible_only=not show_all)
-    for entry in rows[:limit]:
-        mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
-        print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', ui.BOLD)}"
-              f"{entry.name[:30]:<32}{entry.model_count:>5} models")
-    if len(rows) > limit:
-        ui.info(f"... {len(rows) - limit} more; raise --limit or narrow --search")
-    if not rows:
+            f"{models} models in total | icons: models.dev/logos/<id>.svg")
+    found = catalogue.search(search, compatible_only=not show_all)
+    rows = found[:limit]
+
+    drawings = {} if no_icons else logos_mod.icons([entry.id for entry in rows])
+    if drawings:
+        width = max((len(line) for drawing in drawings.values()
+                     for line in drawing), default=8)
+        for entry in rows:
+            _print_provider_card(entry, drawings.get(entry.id, []), width)
+    else:
+        for entry in rows:
+            _print_provider_row(entry)
+
+    if len(found) > limit:
+        ui.info(f"... {len(found) - limit} more; raise --limit or narrow --search")
+    if not found:
         ui.info("no provider matches; try: nusa-rg providers refresh")
+
+
+def _print_provider_row(entry) -> None:
+    """One provider on a single line, with the name of its logo."""
+    mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
+    icon = ui.link(ui.paint(f"{entry.id}.svg", ui.GREY), entry.logo_url)
+    print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', ui.BOLD)}"
+          f"{entry.name[:30]:<32}{entry.model_count:>5} models  {icon}")
+
+
+def _print_provider_card(entry, drawing: list[str], width: int = 8) -> None:
+    """One provider with its logo drawn next to the details."""
+    mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
+    details = [
+        f"[{mark}] {ui.paint(entry.id, ui.BOLD)}",
+        entry.name,
+        f"{entry.model_count} models",
+        ui.link(entry.logo_url, entry.logo_url),
+    ]
+    for index in range(max(len(drawing), len(details))):
+        left = drawing[index] if index < len(drawing) else ""
+        if not drawing and index == 0:
+            left = ui.paint("no logo", ui.GREY)
+        right = details[index] if index < len(details) else ""
+        print(f"  {left:<{width}}  {right}")
 
 
 @providers.command("show")
@@ -795,7 +1172,11 @@ def providers_show(provider_id: str) -> None:
                  "Try: nusa-rg providers list --search <text>")
         sys.exit(1)
     ui.heading(provider.name)
+    drawing = logos_mod.icon(provider.id)
+    for line in drawing:
+        print("  " + line)
     print(f"  id          {provider.id}")
+    print(f"  icon        {ui.link(provider.logo_url, provider.logo_url)}")
     print(f"  endpoint    {provider.api or '(not published - set api_base_url)'}")
     print(f"  key         {', '.join(provider.env) or '(none listed)'}")
     print(f"  models      {provider.model_count}")
@@ -837,6 +1218,25 @@ def providers_models(provider_id: str, search: str, limit: int) -> None:
         print(f"  {ui.paint(f'{model_id:<46}', ui.BOLD)}{context_text:>8}  {cost_text}")
     if len(rows) > limit:
         ui.info(f"... {len(rows) - limit} more; raise --limit or narrow --search")
+
+
+@providers.command("icon")
+@click.argument("provider_id")
+def providers_icon(provider_id: str) -> None:
+    """Draw the logo of one provider (models.dev serves an SVG per id)."""
+    catalogue = _load_catalog()
+    provider = catalogue.get(provider_id)
+    if provider is None:
+        ui.error(f"unknown provider '{provider_id}'. "
+                 "Try: nusa-rg providers list --search <text>")
+        sys.exit(1)
+    drawing = logos_mod.icon(provider.id)
+    if drawing:
+        for line in drawing:
+            print("  " + line)
+    else:
+        ui.warn("the logo of this provider could not be drawn")
+    print(f"  {ui.link(provider.logo_url, provider.logo_url)}")
 
 
 @providers.command("refresh")
@@ -891,13 +1291,17 @@ def update(check_only: bool, force: bool, no_install: bool, yes: bool) -> None:
         ui.info(f"note: {note}")
 
     ui.heading("Check for updates")
+    latest = info.remote_version
+    if latest is None and info.remote_head:
+        latest = f"commit {info.remote_head[:12]}"
     print(f"  installed  {info.installed_version}")
-    print(f"  latest     {info.remote_version or 'unknown'}")
+    print(f"  latest     {latest or 'unknown'}")
     print(f"  checkout   {info.source_dir}")
     print(f"  branch     {info.branch or 'unknown'}")
 
-    if info.remote_version is None:
+    if info.remote_version is None and info.available is None:
         ui.error(info.detail or "could not reach the remote")
+        audit("update.check", "FAILED", "source; remote version unavailable")
         sys.exit(1)
 
     if check_only:
@@ -916,7 +1320,9 @@ def update(check_only: bool, force: bool, no_install: bool, yes: bool) -> None:
         sys.exit(1)
 
     if not yes:
-        ui.info(f"update {info.installed_version} -> {info.remote_version}?")
+        target = info.remote_version or (
+            info.remote_head[:12] if info.remote_head else "latest")
+        ui.info(f"update {info.installed_version} -> {target}?")
         if not click.confirm("Proceed", default=True):
             ui.info("cancelled")
             return
@@ -955,6 +1361,9 @@ def status() -> None:
     provider_id = str(settings.get("api_provider") or "")
     provider = settings.get("model_provider")
     print(f"  provider  {provider}" + (f" ({provider_id})" if provider_id else ""))
+    icon = _provider_icon(provider_id)
+    if icon:
+        print(f"  icon      {icon}")
     print(f"  model     {settings.get('api_model')}")
     print(f"  base url  {settings.provider_base_url()}")
     key_state = "set" if settings.api_key_for(provider_id) else "not set"

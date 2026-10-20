@@ -11,8 +11,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
 from nusa_rg import update
+from nusa_rg.cli import main
 
 
 # ------------------------------------------------------------------ helpers
@@ -119,14 +121,24 @@ def test_version_parsing_handles_suffixes():
 
 # ------------------------------------------------------------ remote guard
 @pytest.mark.parametrize("url,expected", [
+    # Current upstream.
+    ("https://github.com/padz24/Nusa-rg", True),
+    ("https://github.com/padz24/Nusa-rg.git", True),
+    ("https://GitHub.com/padz24/Nusa-rg/", True),
+    # Checkouts cloned before the repository moved must keep updating.
     ("https://github.com/PADZ-PRD/RAG-termux-cli", True),
     ("https://github.com/PADZ-PRD/RAG-termux-cli.git", True),
     ("https://GitHub.com/PADZ-PRD/RAG-termux-cli/", True),
-    ("https://github.com/evil/RAG-termux-cli", False),
+    # Still foreign.
+    ("https://github.com/evil/Nusa-rg", False),
+    ("https://github.com/padz24/other", False),
     ("https://github.com/PADZ-PRD/other", False),
+    ("git@github.com:padz24/Nusa-rg.git", False),
     ("git@github.com:PADZ-PRD/RAG-termux-cli.git", False),
     # Plaintext HTTP must stay refused: an update fetches and runs this code.
+    ("http://github.com/padz24/Nusa-rg", False),
     ("http://github.com/PADZ-PRD/RAG-termux-cli", False),
+    ("HTTPS://github.com/padz24/Nusa-rg", True),
     ("HTTPS://github.com/PADZ-PRD/RAG-termux-cli", True),
     ("/tmp/some/local/repo", False),
     ("", False),
@@ -134,6 +146,12 @@ def test_version_parsing_handles_suffixes():
 ])
 def test_expected_remote(url, expected):
     assert update._is_expected_remote(url) is expected
+
+
+def test_an_explicit_expected_remote_does_not_inherit_legacy_aliases():
+    assert update._is_expected_remote(
+        "https://github.com/PADZ-PRD/RAG-termux-cli", update.GITHUB_REPO
+    ) is False
 
 
 # ---------------------------------------------- local / offline opt-in remote
@@ -229,7 +247,7 @@ def test_the_refusal_names_the_configured_remote(checkout, monkeypatch):
     assert update.GITHUB_REPO not in info.detail
 
 
-def test_foreign_repository_is_refused(tmp_path):
+def test_foreign_repository_is_refused(tmp_path, monkeypatch):
     """A .git belonging to another project must not be updated."""
     other = tmp_path / "other"
     other.mkdir()
@@ -241,6 +259,7 @@ def test_foreign_repository_is_refused(tmp_path):
     assert source == other
     # The guard is what decides; check it directly for a foreign remote.
     assert update._is_expected_remote(update._remote_url(source)) is False
+    monkeypatch.setattr(update, "find_source_dir", lambda: other)
     assert update.check().method != update.METHOD_SOURCE
 
 
@@ -271,6 +290,38 @@ def test_check_reports_up_to_date(checkout):
                              source_dir=checkout.work, remote_version="1.0.0",
                              available=False)
     assert "up to date" in info.summary()
+
+
+def test_check_falls_back_to_commit_ids_when_tags_are_missing(checkout,
+                                                              monkeypatch):
+    """A reachable remote without tags is not the same as an unreachable one."""
+    run_git("push", "-q", "origin", ":refs/tags/v1.0.0", cwd=checkout.work)
+    monkeypatch.setattr(update, "find_source_dir", lambda: checkout.work)
+
+    info = update.check()
+
+    assert info.method == update.METHOD_SOURCE
+    assert info.remote_version is None
+    assert info.remote_head is not None
+    assert info.available is False
+    assert "no version tags" in info.detail
+    assert "up to date" in info.summary()
+
+
+def test_check_uses_commits_when_a_tagless_remote_has_new_work(checkout,
+                                                               monkeypatch):
+    publish(checkout.origin, checkout.work, "1.1.0")
+    for tag in ("v1.0.0", "v1.1.0"):
+        run_git("push", "-q", "origin", f":refs/tags/{tag}",
+                cwd=checkout.work)
+    monkeypatch.setattr(update, "find_source_dir", lambda: checkout.work)
+
+    info = update.check()
+
+    assert info.method == update.METHOD_SOURCE
+    assert info.remote_version is None
+    assert info.available is True
+    assert "newer commits" in info.summary()
 
 
 def test_summary_is_honest_when_remote_is_unknown():
@@ -395,13 +446,15 @@ def _run_cli(args, cwd):
     )
 
 
-def test_cli_check_without_a_checkout(tmp_path):
+def test_cli_check_without_a_checkout(monkeypatch):
     """A directory with no git repo must not crash."""
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    result = _run_cli(["update", "--check"], plain)
-    assert result.returncode == 1
-    assert "checkout" in (result.stdout + result.stderr).lower()
+    monkeypatch.setattr(update, "find_source_dir", lambda: None)
+    monkeypatch.setattr(update, "_package_installed", lambda: False)
+
+    result = CliRunner().invoke(main, ["update", "--check"])
+
+    assert result.exit_code == 1
+    assert "checkout" in result.output.lower()
 
 
 def test_cli_update_is_listed():
@@ -409,10 +462,12 @@ def test_cli_update_is_listed():
     assert "update" in result.stdout
 
 
-def test_cli_update_is_audited(tmp_path, isolated_state):
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    _run_cli(["update", "--check"], plain)
+def test_cli_update_is_audited(isolated_state, monkeypatch):
+    monkeypatch.setattr(update, "find_source_dir", lambda: None)
+    monkeypatch.setattr(update, "_package_installed", lambda: False)
+
+    CliRunner().invoke(main, ["update", "--check"])
+
     log = isolated_state / "logs" / "audit.log"
     assert log.exists()
     assert "update.check" in log.read_text()

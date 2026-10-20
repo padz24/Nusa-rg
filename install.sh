@@ -2,7 +2,7 @@
 # nusa-rg installer for Termux (AC-01, AC-40).
 #
 # One-liner install:
-#   curl -fsSL https://raw.githubusercontent.com/PADZ-PRD/RAG-termux-cli/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/padz24/Nusa-rg/main/install.sh | bash
 #
 # Requirements: Termux >= 0.118, ARM64. Target install time < 120s on a stable
 # connection (AC-01).
@@ -141,7 +141,7 @@ fetch_source() {
   fi
   log "fetching source into $REPO_DIR"
   command -v git >/dev/null 2>&1 || die "git is required to fetch the source tree"
-  git clone --depth 1 https://github.com/PADZ-PRD/RAG-termux-cli.git "$REPO_DIR" \
+  git clone --depth 1 https://github.com/padz24/Nusa-rg.git "$REPO_DIR" \
     || die "clone failed"
 }
 

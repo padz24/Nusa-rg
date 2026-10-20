@@ -53,10 +53,44 @@ def _supports_colour() -> bool:
 
 _COLOUR = _supports_colour()
 
+#: OSC 8 hyperlink control sequences.
+_LINK_START = "\033]8;;"
+_LINK_STOP = "\033]8;;\a"
+
+
+def _supports_hyperlinks() -> bool:
+    """True when the terminal can turn text into a clickable link."""
+    if os.environ.get("NO_HYPERLINKS"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    return os.environ.get("TERM", "") not in ("", "dumb")
+
+
+_HYPERLINKS = _supports_hyperlinks()
+
 
 def set_colour(enabled: bool) -> None:
     global _COLOUR
     _COLOUR = enabled
+
+
+def set_hyperlinks(enabled: bool) -> None:
+    """Turn OSC 8 hyperlinks on or off for the rest of the run."""
+    global _HYPERLINKS
+    _HYPERLINKS = enabled
+
+
+def link(text: str, url: str) -> str:
+    """Wrap ``text`` in an OSC 8 hyperlink when the terminal supports it.
+
+    A text terminal cannot draw an SVG, so a provider logo is offered as a
+    link to the image instead. Piped output stays plain text, which keeps the
+    catalogue readable in a file or a log.
+    """
+    if not _HYPERLINKS or not url or not text:
+        return text
+    return f"{_LINK_START}{url}\a{text}{_LINK_STOP}"
 
 
 def paint(text: str, *codes: str) -> str:

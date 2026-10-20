@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 
 
 class LLMError(RuntimeError):
@@ -70,11 +70,14 @@ class LLMClient(ABC):
         context: str = "",
         system: str = "",
         stream: bool = False,
+        history: Sequence[dict[str, str]] | None = None,
     ) -> LLMResponse:
         """Produce a completion for ``prompt``.
 
         ``context`` is the retrieved project text and ``system`` the configured
         persona; implementations decide whether to embed or forward them.
+        ``history`` is the prior user/assistant turns of a resumed session, in
+        order, and never includes the current prompt.
         """
 
     def supports_stream(self) -> bool:
@@ -83,6 +86,7 @@ class LLMClient(ABC):
 
     def iter_stream(self, prompt: str, *, context: str = "",
                     system: str = "",
+                    history: Sequence[dict[str, str]] | None = None,
                     on_usage: Callable[[Usage], None] | None = None
                     ) -> Iterator[str]:
         """Yield text deltas as they arrive (AC-41).

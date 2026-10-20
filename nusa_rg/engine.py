@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 from .config import Config
 from . import llm
@@ -88,8 +89,9 @@ class CoreEngine:
     # -------------------------------------------------------------- chat
     def ask(self, query: str, *, stream: bool = False,
             skip_retrieval: bool = False, style: str | None = None,
-            command_output: str = "", on_retrieval=None,
-            on_token=None) -> TurnResult:
+            command_output: str = "",
+            history: Sequence[dict[str, str]] | None = None,
+            on_retrieval=None, on_token=None) -> TurnResult:
         """Run one full turn: retrieve -> compose -> generate (FR-10).
 
         Retrieval is skipped automatically when no project has been indexed, so
@@ -97,11 +99,13 @@ class CoreEngine:
         the configured ``response_style`` for this turn; ``command_output`` is
         terminal output the user captured with ``!command``.
 
-        ``on_retrieval`` (if given) fires with the retrieval result as soon as
-        it is ready, and ``on_token`` switches generation to incremental
-        streaming: every text delta is handed to the callback while the full
-        text still comes back in the ``TurnResult``. Providers without SSE
-        support quietly fall back to a whole-answer call (AC-41).
+        ``history`` carries the prior user/assistant turns of a resumed
+        session, oldest first; retrieval and command output still describe the
+        current turn only. ``on_retrieval`` (if given) fires with the retrieval
+        result as soon as it is ready, and ``on_token`` switches generation to
+        incremental streaming: every text delta is handed to the callback while
+        the full text still comes back in the ``TurnResult``. Providers without
+        SSE support quietly fall back to a whole-answer call (AC-41).
         """
         retrieval = RetrievalResult(query=query)
         if not skip_retrieval:
@@ -134,6 +138,7 @@ class CoreEngine:
         # substituted without touching any RAG code (AC-27).
         client = llm.build_client(self.config)
         log_event("llm.generate", provider=client.name, context=prompt.used_context)
+        history_options = {"history": history} if history else {}
         if on_token is not None and client.supports_stream():
             parts: list[str] = []
             usage = Usage()
@@ -144,7 +149,8 @@ class CoreEngine:
 
             for delta in client.iter_stream(prompt.user, context="",
                                             system=prompt.system,
-                                            on_usage=_remember):
+                                            on_usage=_remember,
+                                            **history_options):
                 parts.append(delta)
                 on_token(delta)
             response = LLMResponse(
@@ -152,7 +158,8 @@ class CoreEngine:
             )
         else:
             response = client.generate(
-                prompt.user, context="", system=prompt.system, stream=stream
+                prompt.user, context="", system=prompt.system, stream=stream,
+                **history_options
             )
         return TurnResult(
             answer=response.text,

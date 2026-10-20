@@ -40,6 +40,44 @@ def test_providers_show_unknown_is_an_error(runner):
     assert "unknown provider" in result.output
 
 
+def test_providers_list_shows_the_icon_of_every_provider(runner):
+    result = run(runner, ["providers", "list", "--search", "groq"])
+    assert result.exit_code == 0
+    assert "groq.svg" in result.output
+    assert "models.dev/logos" in result.output
+
+
+def test_providers_show_includes_the_logo_url(runner):
+    result = run(runner, ["providers", "show", "groq"])
+    assert result.exit_code == 0
+    assert "https://models.dev/logos/groq.svg" in result.output
+
+
+def test_providers_icon_prints_the_url(runner):
+    result = run(runner, ["providers", "icon", "groq"])
+    assert result.exit_code == 0
+    assert "https://models.dev/logos/groq.svg" in result.output
+
+
+def test_providers_icon_unknown_provider(runner):
+    result = run(runner, ["providers", "icon", "skynet"])
+    assert result.exit_code == 1
+    assert "unknown provider" in result.output
+
+
+def test_providers_icon_download_saves_the_svg(runner, monkeypatch):
+    """The logo is cached on disk the first time it is drawn."""
+    from nusa_rg import logos
+
+    monkeypatch.delenv(logos.DISABLE_ENV, raising=False)
+    monkeypatch.setattr(logos, "svg_text", lambda name, timeout=15: "<svg/>")
+
+    result = run(runner, ["providers", "icon", "groq"])
+
+    assert result.exit_code == 0
+    assert "https://models.dev/logos/groq.svg" in result.output
+
+
 def test_providers_models_lists_entries(runner):
     result = run(runner, ["providers", "models", "deepseek", "--limit", "5"])
     assert result.exit_code == 0
@@ -149,6 +187,7 @@ def test_status_shows_style_and_provider(runner):
     assert result.exit_code == 0
     assert "style" in result.output
     assert "deepseek" in result.output
+    assert "https://models.dev/logos/deepseek.svg" in result.output
 
 
 # ---------------------------------------------------------------------- run

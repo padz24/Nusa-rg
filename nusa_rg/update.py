@@ -30,7 +30,11 @@ from .logging_setup import audit
 
 #: Upstream repository. A checkout pointing anywhere else is refused unless the
 #: user pins a different remote explicitly (see :func:`expected_remote`).
-GITHUB_REPO = "https://github.com/PADZ-PRD/RAG-termux-cli"
+GITHUB_REPO = "https://github.com/padz24/Nusa-rg"
+
+#: Repositories that used to host the same project. Checkouts cloned before
+#: the move must keep updating, but an unrelated repository is still refused.
+LEGACY_GITHUB_REPOS = ("https://github.com/PADZ-PRD/RAG-termux-cli",)
 
 #: Config key naming the one remote this installation may update from. Setting
 #: it is what authorises an offline or local mirror.
@@ -64,6 +68,7 @@ class UpdateInfo:
     method: str
     source_dir: Path | None = None
     remote_version: str | None = None
+    remote_head: str | None = None
     branch: str = ""
     dirty: bool = False
     detail: str = ""
@@ -72,6 +77,12 @@ class UpdateInfo:
     def summary(self) -> str:
         if self.method == METHOD_SOURCE:
             if self.remote_version is None:
+                if self.available is True:
+                    return (f"installed {self.installed_version}; remote has "
+                            "newer commits (no version tags)")
+                if self.available is False:
+                    return (f"installed {self.installed_version}; up to date "
+                            "at the latest commit (no version tags)")
                 return (f"installed {self.installed_version}; "
                         "could not determine the latest version")
             if self.available is None:
@@ -157,10 +168,11 @@ def _remote_url(source_dir: Path) -> str | None:
 def expected_remote() -> str:
     """The remote this installation is allowed to update from.
 
-    Defaults to :data:`GITHUB_REPO`. A local or offline remote is only honoured
-    when the user names it with ``nusa-rg config set update_remote <path>``:
-    an update runs ``git reset --hard``, so the target has to be something the
-    user chose, never merely whatever ``origin`` happens to point at.
+    Unset means the official repository, including the legacy URL it moved
+    from. A local or offline remote is only honoured when the user names it
+    with ``nusa-rg config set update_remote <path>``: an update runs ``git
+    reset --hard``, so the target has to be something the user chose, never
+    merely whatever ``origin`` happens to point at.
     """
     try:
         from .config import Config
@@ -205,20 +217,8 @@ def _https_parts(url: str) -> tuple[str, str] | None:
     return host.strip().lower(), path.lower()
 
 
-def _is_expected_remote(url: str | None, expected: str | None = None) -> bool:
-    """True only for the remote the user is entitled to update from.
-
-    Derived from :data:`GITHUB_REPO` (or an explicitly configured remote) so
-    the two cannot drift apart, and strict about scheme, host and path so a
-    ``.git`` directory belonging to some other project is never mistaken for
-    this one.
-    """
-    if not url:
-        return False
-    expected = expected if expected is not None else expected_remote()
-    if not expected:
-        return False
-
+def _remote_matches(url: str, expected: str) -> bool:
+    """Compare one remote with one authorised target."""
     if _is_local_remote(expected):
         # An offline remote is only accepted when it was configured by hand,
         # and only when the checkout actually points at that exact path.
@@ -229,6 +229,29 @@ def _is_expected_remote(url: str | None, expected: str | None = None) -> bool:
     if _is_local_remote(url):
         return False
     return _https_parts(url) is not None and _https_parts(url) == _https_parts(expected)
+
+
+def _is_expected_remote(url: str | None, expected: str | None = None) -> bool:
+    """True only for the remote the user is entitled to update from.
+
+    The default authorises the current official repository and the legacy URL
+    it replaced, so old checkouts keep working. An explicit ``expected`` (or
+    ``update_remote``) is matched exactly, and the scheme/host/path comparison
+    keeps a ``.git`` directory from an unrelated project out.
+    """
+    if not url:
+        return False
+
+    if expected is not None:
+        return bool(expected) and _remote_matches(url, expected)
+
+    configured = expected_remote()
+    if configured == GITHUB_REPO:
+        return any(_remote_matches(url, candidate)
+                   for candidate in (GITHUB_REPO, *LEGACY_GITHUB_REPOS))
+    if not configured:
+        return False
+    return _remote_matches(url, configured)
 
 
 def current_branch(source_dir: Path) -> str:
@@ -261,6 +284,31 @@ def remote_version(source_dir: Path) -> str | None:
         if len(parts) == 2 and parts[1].strip():
             return parts[1].strip().lstrip("v")
     return None
+
+
+def _remote_head(source_dir: Path, branch: str) -> str | None:
+    """Commit SHA at the tip of ``branch`` on the configured remote."""
+    url = _remote_url(source_dir)
+    if not url or not branch:
+        return None
+    code, out, _ = _run(
+        ["git", "ls-remote", "--heads", url, f"refs/heads/{branch}"],
+        cwd=source_dir, timeout=60,
+    )
+    if code != 0:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if parts and parts[0]:
+            return parts[0]
+    return None
+
+
+def _local_head(source_dir: Path) -> str | None:
+    code, out, _ = _run(["git", "rev-parse", "HEAD"], cwd=source_dir)
+    if code != 0:
+        return None
+    return out or None
 
 
 def _parse_version(text: str) -> tuple:
@@ -321,8 +369,19 @@ def check() -> UpdateInfo:
 
     info.method = METHOD_SOURCE
     info.remote_version = remote_version(source_dir)
-    info.available = is_newer(info.remote_version, __version__)
-    if info.remote_version is None:
+    if info.remote_version is not None:
+        info.available = is_newer(info.remote_version, __version__)
+        return info
+
+    # Some repositories publish commits without release tags. Compare commit
+    # IDs as a fallback instead of pretending the remote is unreachable.
+    info.remote_head = _remote_head(source_dir, info.branch or "main")
+    local_head = _local_head(source_dir)
+    if info.remote_head and local_head:
+        info.available = info.remote_head != local_head
+        info.detail = ("the remote has no version tags; comparing commit IDs")
+    else:
+        info.available = None
         info.detail = "could not reach the remote to check for a newer version"
     return info
 
@@ -478,6 +537,7 @@ __all__ = [
     "remote_version",
     "is_newer",
     "GITHUB_REPO",
+    "LEGACY_GITHUB_REPOS",
     "REMOTE_KEY",
     "expected_remote",
     "environment_note",

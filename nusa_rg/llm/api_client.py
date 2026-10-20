@@ -10,7 +10,7 @@ package keeps working in a bare Termux Python install.
 from __future__ import annotations
 
 import json
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 
 from .base import (
     AuthenticationError,
@@ -91,6 +91,24 @@ class ApiClient(LLMClient):
             # without it in _stream_response().
             body["stream_options"] = {"include_usage": True}
         return body
+
+    @staticmethod
+    def _messages(user: str, system: str,
+                  history: Sequence[dict[str, str]] | None
+                  ) -> list[dict[str, str]]:
+        """Build the ordered chat payload: system, prior turns, current turn."""
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        for item in history or ():
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            content = item.get("content")
+            if role in ("user", "assistant") and isinstance(content, str) and content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user})
+        return messages
 
     def _stream_response(self, messages: list[dict[str, str]]):
         """POST a streaming request, retrying without ``stream_options``.
@@ -237,14 +255,12 @@ class ApiClient(LLMClient):
         context: str = "",
         system: str = "",
         stream: bool = False,
+        history: Sequence[dict[str, str]] | None = None,
     ) -> LLMResponse:
         user = prompt
         if context:
             user = f"{context}\n\n{prompt}"
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": user})
+        messages = self._messages(user, system, history)
 
         if stream:
             response = self._stream_response(messages)
@@ -314,18 +330,17 @@ class ApiClient(LLMClient):
         return True
 
     def iter_stream(self, prompt: str, *, context: str = "", system: str = "",
+                    history: Sequence[dict[str, str]] | None = None,
                     on_usage: Callable[[Usage], None] | None = None
                     ) -> Iterator[str]:
         """Yield text deltas for a streaming completion (AC-41).
 
         ``on_usage`` is called once with the final token counts when the
-        provider includes them in the stream.
+        provider includes them in the stream. ``history`` supplies prior
+        session turns, oldest first.
         """
         user = f"{context}\n\n{prompt}" if context else prompt
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": user})
+        messages = self._messages(user, system, history)
 
         response = self._stream_response(messages)
         self._raise_for_status(response)

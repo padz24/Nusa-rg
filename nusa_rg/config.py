@@ -45,6 +45,8 @@ DEFAULTS: dict[str, Any] = {
     ),
     "response_style": "default",         # "default" | "caveman"
     "max_context_snippets": 3,
+    # How many previous user/assistant pairs are sent when resuming a session.
+    "session_history_turns": 10,
     "chunk_lines": 60,
     "chunk_overlap_lines": 10,
     "max_file_bytes": 2 * 1024 * 1024,

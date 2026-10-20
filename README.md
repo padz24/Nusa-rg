@@ -46,7 +46,7 @@ nusa-rg doctor
 ## Install
 
 ```bash
-git clone https://github.com/PADZ-PRD/RAG-termux-cli.git ~/nusa-rg
+git clone https://github.com/padz24/Nusa-rg.git ~/nusa-rg
 cd ~/nusa-rg && ./install.sh
 ```
 
@@ -74,13 +74,18 @@ nusa-rg chat "explain this traceback"     # one-shot
 
 | Command | Purpose |
 | :-- | :-- |
-| `nusa-rg chat` | Interactive session (`/exit`, `/clear`, `/caveman`, `!command`, `/help`) |
+| `nusa-rg chat` | Interactive session (`/exit`, `/clear`, `/session`, `/caveman`, `!command`, `/help`) |
 | `nusa-rg chat "msg"` | Single question, then exit |
+| `nusa-rg chat --session <id>` | Resume or create a saved conversation |
+| `nusa-rg session list` | List saved conversations, newest first |
+| `nusa-rg session show <id>` | Show a session's metadata and turns |
+| `nusa-rg session delete <id> --yes` | Delete a saved conversation |
 | `nusa-rg run <cmd>` | Run a command (through rtk when installed); `--ask "…"` answers with its output as context |
 | `nusa-rg index <path>` | Scan and index a project |
 | `nusa-rg providers list` | Browse the bundled catalogue of 200+ providers |
 | `nusa-rg providers show <id>` | Endpoint, key variable, and default model for one provider |
 | `nusa-rg providers models <id>` | The models a provider hosts, newest first |
+| `nusa-rg providers icon <id>` | Draw the logo of one provider and print its address |
 | `nusa-rg providers refresh` | Fetch a fresh catalogue from models.dev |
 | `nusa-rg config show` | Print active configuration |
 | `nusa-rg config set <key> <value>` | Change a setting (`--secret` for keys, `--provider <id>` for per-provider keys) |
@@ -90,8 +95,37 @@ nusa-rg chat "explain this traceback"     # one-shot
 | `nusa-rg doctor` | Installation and security self-checks |
 
 Useful flags: `--json` on `index`, `--no-rag` on `chat`, `--project/-p`,
-`--stream`, `--force` on `index`, `--reveal` on `config show`, `--caveman` on
-`chat` and `run`, `--raw` on `run`.
+`--stream`, `--session/--session-id` on `chat` and `run --ask`, `--force` on
+`index`, `--reveal` on `config show`, `--caveman` on `chat` and `run`, `--raw`
+on `run`.
+
+## Sessions
+
+A named session keeps the visible user/assistant turns and the response style,
+so a later command can continue the same conversation:
+
+```bash
+nusa-rg chat --session fix-auth
+nusa-rg chat --session fix-auth "and why does that happen?"
+nusa-rg run --session fix-auth --ask "what failed?" pytest -x
+```
+
+Inside the chat, manage sessions without leaving the prompt:
+
+```
+/session [show [id]]        show the active or a saved session
+/session list               list saved sessions
+/session new [id]           start a new session (id is generated when omitted)
+/session use <id>           switch to a saved session
+/session delete <id> --yes  delete one
+```
+
+The CLI equivalent is `nusa-rg session list|show|delete`; `session new [id]`
+creates an empty session and prints its id. Stored sessions live in
+`~/.nusa-rg/sessions/<id>.json` with owner-only permissions. Only the
+conversation text is persisted; retrieved code is rebuilt from the index on
+each turn. Prompt history is capped by `session_history_turns` (default 10
+turns), while the file keeps the full transcript.
 
 ## Providers
 
@@ -105,8 +139,26 @@ nusa-rg providers list                      # ready-to-use providers
 nusa-rg providers list --search deep            # filter by id or name
 nusa-rg providers show deepseek             # endpoint, key variable, default model
 nusa-rg providers models deepseek           # its models, newest first
+nusa-rg providers icon deepseek             # draw one provider's logo
 nusa-rg providers refresh                   # replace the snapshot with a fresh copy
 ```
+
+### Provider icons
+
+Every provider has a logo on the registry: `https://models.dev/logos/<id>.svg`.
+`nusa-rg` fetches those SVGs once, caches them in `~/.nusa-rg/logos`, and
+draws each one next to its provider — a terminal cannot show SVG, so the file
+is rasterised into Braille cells.
+
+```bash
+nusa-rg providers list          # every provider with its logo drawn
+nusa-rg providers show deepseek # the logo of one provider
+nusa-rg providers icon deepseek # just the logo, plus its address
+```
+
+`providers list --no-icons` (or `NUSA_RG_NO_LOGOS=1`) keeps the compact
+one-line table and never touches the network; the same happens when the
+registry cannot be reached.
 
 Switching is a config change and takes effect on the next turn — no reinstall,
 no terminal restart. Setting a provider also picks its default model, which
@@ -239,6 +291,7 @@ provider_keys:                  # per-provider references, never the secrets
   groq: 'keystore://credential/provider/groq'
 fallback_providers: ['groq', 'deepseek:deepseek-flash']   # tried in order
 response_style: default         # default | caveman
+session_history_turns: 10       # previous turns sent when resuming a session
 command_timeout: 120            # seconds a `run`/`!command` may run
 command_output_limit: 40000     # bytes of command output kept for context
 command_use_rtk: true           # route commands through rtk when installed
@@ -254,10 +307,11 @@ update_remote: ''                # empty = the official GitHub repository only
 
 ### Offline updates
 
-`nusa-rg update` refuses any remote other than
-`https://github.com/PADZ-PRD/RAG-termux-cli`, because an update runs
-`git reset --hard` against `origin`. To update from a local mirror or an
-offline bare repository, name it explicitly:
+`nusa-rg update` refuses any remote other than the official repository
+(`https://github.com/padz24/Nusa-rg`), because an update runs `git reset
+--hard` against `origin`. Checkouts still pointing at the legacy
+`PADZ-PRD/RAG-termux-cli` URL are accepted too. To update from a local mirror
+or an offline bare repository, name it explicitly:
 
 ```bash
 nusa-rg config set update_remote ~/RAG-termux-cli.git
@@ -265,6 +319,8 @@ nusa-rg config set update_remote ~/RAG-termux-cli.git
 
 That setting is the authorisation. It is not a default that a stray `origin`
 can satisfy on its own — leaving it empty keeps the GitHub-only guard in place.
+If the remote has no release tags, `nusa-rg update` compares the remote branch
+commit with the local `HEAD` instead of guessing a version.
 
 ## How retrieval works
 
@@ -360,7 +416,8 @@ Two cases are reported rather than guessed at:
   checkout to update; the command says so and points at `pkg upgrade
   termux-nusa-rg`.
 * **Not this repository.** The checkout's `origin` must resolve to
-  `github.com/PADZ-PRD/RAG-termux-cli`. A `.git` directory belonging to some
+  `github.com/padz24/Nusa-rg` (or the legacy
+  `github.com/PADZ-PRD/RAG-termux-cli`). A `.git` directory belonging to some
   other project is refused outright.
 
 A dirty working tree or a diverged branch stops the update and says so; pass
@@ -396,6 +453,7 @@ State lives in one directory:
 ├── master.key         # 0600, scrypt-derives the keystore key
 ├── index.db           # SQLite FTS5 index
 ├── catalog.json       # optional: `providers refresh` snapshot (0600), overrides the bundled one
+├── logos/             # provider SVGs fetched from models.dev, drawn in the terminal
 └── logs/
     ├── app.log        # operational log, 10 MB × 5 rotation
     └── audit.log      # config changes and index operations
@@ -409,6 +467,7 @@ Set `NUSA_RG_HOME` to relocate everything.
 CLI (click)
   ├── Command runner ──────→ rtk (optional) → process, never a shell
   ├── Catalogue (models.dev snapshot) → provider browser, failover wiring
+  ├── Logo renderer (models.dev SVG → Braille cells) → provider browser
   └── CoreEngine ──────────────────┐
         ├── RAG Module            │
         │     scanner → index → retriever → composer
@@ -428,7 +487,7 @@ resulting text as labelled, sanitised context.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 493 tests
+pytest                    # 602 tests
 python -m nusa_rg       # run without installing
 ```
 

@@ -7,4 +7,4 @@
 # manifest. Shipped native binaries (for example a prebuilt llama-cli) MUST be
 # listed here, and their hashes updated whenever the release binary changes.
 #
-d76d244b0814aaada0bec205f4b3cf3a5f0057492f7b17d5d9b1d0cbde34bbfb  nusa-rg.1
+3d950b6cb2e7c5eacca1e6f84b7d27c2b89c3a10e9de2a2fbb957b4365a58f51  nusa-rg.1

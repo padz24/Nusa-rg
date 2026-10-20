@@ -307,3 +307,37 @@ def test_collect_reports_the_index_size_and_age(sample_project):
     assert facts.index.endswith("just now")
     assert facts.index.split(" · ")[0].endswith("chunks")
     assert facts.index_ready is True
+
+
+# ------------------------------------------------------------------ links
+def test_link_is_plain_text_when_hyperlinks_are_off():
+    previous = ui._HYPERLINKS
+    ui.set_hyperlinks(False)
+    try:
+        rendered = ui.link("groq.svg", "https://models.dev/logos/groq.svg")
+    finally:
+        ui.set_hyperlinks(previous)
+
+    assert rendered == "groq.svg"
+
+
+def test_link_wraps_the_text_when_hyperlinks_are_on():
+    previous = ui._HYPERLINKS
+    ui.set_hyperlinks(True)
+    try:
+        rendered = ui.link("groq.svg", "https://models.dev/logos/groq.svg")
+    finally:
+        ui.set_hyperlinks(previous)
+
+    assert "\033]8;;https://models.dev/logos/groq.svg\a" in rendered
+    assert "groq.svg" in rendered
+    assert rendered.endswith("\033]8;;\a")
+
+
+def test_link_without_a_url_is_untouched():
+    previous = ui._HYPERLINKS
+    ui.set_hyperlinks(True)
+    try:
+        assert ui.link("groq.svg", "") == "groq.svg"
+    finally:
+        ui.set_hyperlinks(previous)

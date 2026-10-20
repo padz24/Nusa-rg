@@ -16,6 +16,9 @@ def isolated_home(tmp_path, monkeypatch):
     state.mkdir()
     monkeypatch.setenv("NUSA_RG_HOME", str(state))
     monkeypatch.setenv("NO_COLOR", "1")
+    # Provider logos are fetched from models.dev; tests must not use the
+    # network, so the drawing is stubbed where it matters.
+    monkeypatch.setenv("NUSA_RG_NO_LOGOS", "1")
     yield state
 
 

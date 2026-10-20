@@ -11,9 +11,24 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from typing import Sequence
 
 from .. import sanitize
 from .base import LLMClient, LLMResponse, LocalModelError, Usage
+
+
+def _with_history(history: Sequence[dict[str, str]], prompt: str) -> str:
+    """Render prior turns into the single-prompt interface llama-cli expects."""
+    lines = ["Previous conversation:"]
+    for item in history:
+        role = item.get("role")
+        content = item.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str) or not content:
+            continue
+        label = "User" if role == "user" else "Assistant"
+        lines.append(f"{label}: {content}")
+    lines.extend(["", f"User: {prompt}", "Assistant:"])
+    return "\n".join(lines)
 
 
 class LocalLLMRunner(LLMClient):
@@ -93,6 +108,7 @@ class LocalLLMRunner(LLMClient):
         context: str = "",
         system: str = "",
         stream: bool = False,
+        history: Sequence[dict[str, str]] | None = None,
     ) -> LLMResponse:
         """Run one completion.
 
@@ -113,6 +129,8 @@ class LocalLLMRunner(LLMClient):
             )
 
         user = f"{context}\n\n{prompt}" if context else prompt
+        if history:
+            user = _with_history(history, user)
         command = self.build_command(binary, system, user)
 
         try:
