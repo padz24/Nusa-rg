@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import stat
 
 import pytest
@@ -59,7 +60,8 @@ def test_bare_invocation_shows_the_banner(runner):
     """A bare `nusa-rg` prints the banner above the command list."""
     result = run(runner, [])
     assert result.exit_code == 2
-    assert "╭─ nusa-rg v" in result.output, "the status card renders"
+    assert "nusa-rg v" in result.output, "the banner name line renders"
+    assert "index empty" in result.output, "the status chips render"
     assert "Commands:" in result.output
 
 
@@ -256,6 +258,39 @@ def test_chat_help_command(runner):
 def test_chat_clear_command(runner):
     result = run(runner, ["chat"], input="/clear\n/exit\n")
     assert "context cleared" in result.output
+
+
+def test_chat_shows_glyphs_footer_and_hints(runner, monkeypatch):
+    """The chat prompt is ❯, the answer marker is ◆, and tokens are summed."""
+    from nusa_rg.llm.base import LLMResponse, Usage
+
+    def fake_generate(self, query, *, context="", system="", stream=False):
+        return LLMResponse(
+            text="stub answer",
+            usage=Usage(prompt_tokens=111, completion_tokens=57),
+            provider="stub",
+        )
+
+    monkeypatch.setattr("nusa_rg.llm.api_client.ApiClient.generate", fake_generate)
+    run(runner, ["config", "set", "api_key", "sk-stub", "--secret"])
+    result = run(runner, ["chat"], input="hello\n/exit\n")
+
+    assert result.exit_code == 0, result.output
+    assert "❯" in result.output
+    assert "◆" in result.output
+    assert re.search(r"  \d+\.\d{2}s · 168 tok", result.output), "111+57 tokens"
+    assert "/exit keluar  /help perintah" in result.output
+    assert "index kosong, jalankan:" in result.output
+    assert "  nusa-rg index <path>" in result.output
+
+
+def test_chat_hides_the_index_hint_when_ready(runner, sample_project):
+    run(runner, ["index", str(sample_project)])
+    result = run(runner, ["chat"], input="/exit\n")
+
+    assert result.exit_code == 0, result.output
+    assert "index ready" in result.output
+    assert "index kosong, jalankan:" not in result.output
 
 
 def test_chat_reports_retrieved_snippets(runner, sample_project, monkeypatch):

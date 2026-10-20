@@ -11,12 +11,12 @@ answers.
 Built to the specification in [`AGENS.md`](AGENS.md).
 
 ```
-you > how is the password verified?
+❯ how is the password verified?
   context: src/auth.py:1-14
     def verify_password(password: str, salt: str, digest: str) -> bool:
         """Constant-time password check."""
         return hmac.compare_digest(hash_password(password, salt), digest)
-assistant >
+◆
   Use verify_password() at src/auth.py:12; it compares the digest with
   hmac.compare_digest, which avoids leaking timing information.
 ```
@@ -184,11 +184,11 @@ Inside a chat session, a line starting with `!` runs the command the same way;
 you see the output, and the next question is answered with it attached:
 
 ```
-you > !pytest -x
+❯ !pytest -x
   $ pytest -x
   ... output, filtered by rtk ...
   exit 1 | 2.4s | output filtered by rtk
-you > why did the second test fail?
+❯ why did the second test fail?
 ```
 
 The details:

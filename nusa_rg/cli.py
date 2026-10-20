@@ -316,18 +316,8 @@ def _toggle_style(settings: Config, command: str, current: str | None) -> str:
 def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       plain: bool = False, markdown: bool = True,
                       style: str | None = None) -> None:
-    ui.banner()
-    ui.heading("type /exit to quit, /help for commands")
-    if not no_rag:
-        # The card above already shows the chunk count; only the empty state
-        # needs the actionable hint.
-        try:
-            files, _chunks = engine.index.count()
-        except Exception:  # noqa: BLE001 - a broken index must not block chat
-            files = 0
-        if not files:
-            ui.info("index: empty - run 'nusa-rg index <path>' "
-                    "for context-aware answers")
+    facts = ui.banner()
+    ui.chat_hints(index_empty=not facts.index_ready and not no_rag)
 
     session_style = style
     pending_command = ""
@@ -390,9 +380,8 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
         if turn.response.used_fallback:
             ui.info(f"answered via fallback provider: {turn.response.provider}")
         usage = turn.response.usage
-        if usage.prompt_tokens or usage.completion_tokens:
-            ui.info(f"[{turn.retrieval.duration:.2f}s retrieval | "
-                    f"{usage.prompt_tokens}+{usage.completion_tokens} tokens]")
+        ui.footer(turn.retrieval.duration,
+                  usage.prompt_tokens + usage.completion_tokens)
 
     engine.close()
 

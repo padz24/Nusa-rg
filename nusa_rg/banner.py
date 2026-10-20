@@ -1,6 +1,6 @@
 """Runtime facts for the startup banner: project, branch, index, model, rtk.
 
-The status card shows live state, so gathering it must never block or crash a
+The banner shows live state, so gathering it must never block or crash a
 command: every lookup degrades to a placeholder, the index database is only
 opened when it already exists, and git runs with a short timeout.
 """
@@ -26,14 +26,19 @@ _DASH = "—"
 
 @dataclass(frozen=True)
 class Facts:
-    """Values rendered in the banner's status card."""
+    """Values rendered in the banner's identity lines and status chips."""
 
     version: str = __version__
     project: str = _DASH
-    branch: str = _DASH
+    branch: str = ""
     index: str = "empty"
     model: str = _DASH
     rtk: str = "off"
+
+    @property
+    def index_ready(self) -> bool:
+        """True when the index holds chunks (the green chip)."""
+        return bool(self.index) and self.index not in ("empty", _DASH)
 
 
 def _config() -> Config | None:
@@ -70,31 +75,23 @@ def _shorten(path: str) -> str:
 
 
 def _git(project: Path) -> str:
-    """``main · 3 changed`` for the checkout at ``project``, or a dash."""
-    def run(*args: str) -> str | None:
-        argv = ["git", "--no-optional-locks", "-C", str(project), *args]
-        try:
-            result = subprocess.run(
-                argv,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=_GIT_TIMEOUT,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
-        return result.stdout if result.returncode == 0 else None
-
-    branch = run("rev-parse", "--abbrev-ref", "HEAD")
-    if branch is None:
-        return _DASH
-    branch = branch.strip() or _DASH
-    if branch == "HEAD":
-        branch = "detached"
-    status = run("status", "--porcelain")
-    changed = sum(1 for line in (status or "").splitlines() if line.strip())
-    return f"{branch} · {changed} changed" if changed else branch
+    """Branch name for the checkout at ``project``, or ``""`` outside git."""
+    try:
+        result = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(project),
+             "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_GIT_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    branch = result.stdout.strip()
+    return "detached" if branch == "HEAD" else branch
 
 
 def _index_row() -> tuple[str, str]:
@@ -160,7 +157,7 @@ def collect() -> Facts:
                 project = "."
 
     checkout = Path(project).expanduser()
-    branch = _git(checkout) if checkout.is_dir() else _DASH
+    branch = _git(checkout) if checkout.is_dir() else ""
     return Facts(
         project=_shorten(str(checkout)),
         branch=branch,
