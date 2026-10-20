@@ -13,7 +13,7 @@ from pathlib import Path
 from .config import Config
 from . import llm
 from . import style as style_mod
-from .llm.base import LLMResponse
+from .llm.base import LLMResponse, Usage
 from .logging_setup import audit, log_event
 from .rag import ComposedPrompt, ProjectIndex, RetrievalResult, compose, retrieve
 
@@ -88,13 +88,20 @@ class CoreEngine:
     # -------------------------------------------------------------- chat
     def ask(self, query: str, *, stream: bool = False,
             skip_retrieval: bool = False, style: str | None = None,
-            command_output: str = "") -> TurnResult:
+            command_output: str = "", on_retrieval=None,
+            on_token=None) -> TurnResult:
         """Run one full turn: retrieve -> compose -> generate (FR-10).
 
         Retrieval is skipped automatically when no project has been indexed, so
         a fresh install can still answer general questions. ``style`` overrides
         the configured ``response_style`` for this turn; ``command_output`` is
         terminal output the user captured with ``!command``.
+
+        ``on_retrieval`` (if given) fires with the retrieval result as soon as
+        it is ready, and ``on_token`` switches generation to incremental
+        streaming: every text delta is handed to the callback while the full
+        text still comes back in the ``TurnResult``. Providers without SSE
+        support quietly fall back to a whole-answer call (AC-41).
         """
         retrieval = RetrievalResult(query=query)
         if not skip_retrieval:
@@ -110,6 +117,9 @@ class CoreEngine:
                 log_event("retrieve", query=query, hits=len(retrieval.snippets),
                           duration=f"{retrieval.duration:.3f}")
 
+        if on_retrieval is not None:
+            on_retrieval(retrieval)
+
         base_system = str(self.config.get("system_prompt", "") or "")
         effective_style = style or str(
             self.config.get("response_style", "default") or "default")
@@ -124,9 +134,26 @@ class CoreEngine:
         # substituted without touching any RAG code (AC-27).
         client = llm.build_client(self.config)
         log_event("llm.generate", provider=client.name, context=prompt.used_context)
-        response = client.generate(
-            prompt.user, context="", system=prompt.system, stream=stream
-        )
+        if on_token is not None and client.supports_stream():
+            parts: list[str] = []
+            usage = Usage()
+
+            def _remember(value: Usage) -> None:
+                nonlocal usage
+                usage = value
+
+            for delta in client.iter_stream(prompt.user, context="",
+                                            system=prompt.system,
+                                            on_usage=_remember):
+                parts.append(delta)
+                on_token(delta)
+            response = LLMResponse(
+                text="".join(parts), usage=usage, provider=client.name
+            )
+        else:
+            response = client.generate(
+                prompt.user, context="", system=prompt.system, stream=stream
+            )
         return TurnResult(
             answer=response.text,
             prompt=prompt,

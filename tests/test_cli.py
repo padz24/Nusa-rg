@@ -289,7 +289,7 @@ def test_chat_hides_the_index_hint_when_ready(runner, sample_project):
     result = run(runner, ["chat"], input="/exit\n")
 
     assert result.exit_code == 0, result.output
-    assert "index ready" in result.output
+    assert "index empty" not in result.output
     assert "index kosong, jalankan:" not in result.output
 
 

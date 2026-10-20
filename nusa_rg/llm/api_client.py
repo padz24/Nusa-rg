@@ -10,7 +10,7 @@ package keeps working in a bare Termux Python install.
 from __future__ import annotations
 
 import json
-from typing import Iterator
+from typing import Callable, Iterator
 
 from .base import (
     AuthenticationError,
@@ -85,7 +85,26 @@ class ApiClient(LLMClient):
         }
         if self.max_tokens:
             body["max_tokens"] = self.max_tokens
+        if stream:
+            # OpenAI-compatible servers only put token counts in the final SSE
+            # event when this is set. Servers that reject the field are retried
+            # without it in _stream_response().
+            body["stream_options"] = {"include_usage": True}
         return body
+
+    def _stream_response(self, messages: list[dict[str, str]]):
+        """POST a streaming request, retrying without ``stream_options``.
+
+        A few OpenAI-compatible servers reject unknown request fields with a
+        400. The retry is safe because it happens before any body is read.
+        """
+        payload = self._payload(messages, stream=True)
+        response = self._post(payload, stream=True)
+        if (self._status(response) == 400
+                and "stream_options" in self._body_text(response).lower()):
+            payload.pop("stream_options", None)
+            response = self._post(payload, stream=True)
+        return response
 
     def _post(self, payload: dict, stream: bool = False):
         """POST the payload, translating transport errors into LLMError."""
@@ -227,12 +246,21 @@ class ApiClient(LLMClient):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user})
 
+        if stream:
+            response = self._stream_response(messages)
+            self._raise_for_status(response)
+            parts: list[str] = []
+            usage = Usage()
+            for text, event_usage in _iter_sse_events(response):
+                if text:
+                    parts.append(text)
+                if event_usage is not None:
+                    usage = event_usage
+            return LLMResponse(text="".join(parts), usage=usage,
+                               provider=self.name)
+
         response = self._post(self._payload(messages, stream), stream=stream)
         self._raise_for_status(response)
-
-        if stream:
-            text = "".join(_iter_sse(response))
-            return LLMResponse(text=text, usage=Usage(), provider=self.name)
 
         body = self._read_json(response)
         try:
@@ -282,18 +310,30 @@ class ApiClient(LLMClient):
             )
         return "The model returned an empty response."
 
-    def iter_stream(self, prompt: str, *, context: str = "", system: str = "") -> Iterator[str]:
-        """Yield text deltas for a streaming completion (AC-41)."""
+    def supports_stream(self) -> bool:
+        return True
+
+    def iter_stream(self, prompt: str, *, context: str = "", system: str = "",
+                    on_usage: Callable[[Usage], None] | None = None
+                    ) -> Iterator[str]:
+        """Yield text deltas for a streaming completion (AC-41).
+
+        ``on_usage`` is called once with the final token counts when the
+        provider includes them in the stream.
+        """
         user = f"{context}\n\n{prompt}" if context else prompt
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user})
 
-        response = self._post(self._payload(messages, stream=True), stream=True)
+        response = self._stream_response(messages)
         self._raise_for_status(response)
-        for delta in _iter_sse(response):
-            yield delta
+        for text, usage in _iter_sse_events(response):
+            if usage is not None and on_usage is not None:
+                on_usage(usage)
+            if text:
+                yield text
 
     def health_check(self) -> tuple[bool, str]:
         """Probe the endpoint before a query is attempted (FR-08, AC-10)."""
@@ -318,13 +358,39 @@ class ApiClient(LLMClient):
         return True, f"{self.base_url} reachable, model={self.model}"
 
 
-def _iter_sse(response) -> Iterator[str]:
-    """Yield content deltas from an SSE stream, tolerating missing streams."""
+def _usage_from(event: dict) -> Usage | None:
+    """Token counts carried by one SSE event, or None when absent/empty."""
+    usage = event.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    try:
+        prompt = int(usage.get("prompt_tokens",
+                              usage.get("input_tokens", 0)) or 0)
+        completion = int(usage.get("completion_tokens",
+                                  usage.get("output_tokens", 0)) or 0)
+    except (TypeError, ValueError):
+        return None
+    if not (prompt or completion):
+        return None
+    return Usage(prompt_tokens=prompt, completion_tokens=completion)
+
+
+def _iter_sse_events(response) -> Iterator[tuple[str | None, Usage | None]]:
+    """Yield ``(text, usage)`` from an SSE stream, tolerating missing streams.
+
+    Content events carry text and no usage; the final usage event carries
+    counts and no text. Providers that report neither simply omit the event.
+    """
     if hasattr(response, "iter_lines"):
-        iterator = response.iter_lines()
-    else:  # urllib fallback: split the raw body on newlines
-        body = response.read().decode(errors="replace")
-        iterator = body.splitlines()
+        # A small chunk keeps the stream live even when the server closes the
+        # connection instead of using chunked transfer encoding: the default
+        # 512-byte read would otherwise wait for half a kilobyte of deltas.
+        iterator = response.iter_lines(chunk_size=1)
+    else:  # urllib fallback: iterate lines instead of reading the whole body
+        if hasattr(response, "__iter__"):
+            iterator = response
+        else:
+            iterator = response.read().decode(errors="replace").splitlines()
 
     for line in iterator:
         if not line:
@@ -340,11 +406,21 @@ def _iter_sse(response) -> Iterator[str]:
             event = json.loads(payload)
         except ValueError:
             continue
+        usage = _usage_from(event)
+        if usage is not None:
+            yield None, usage
         for choice in event.get("choices") or []:
             delta = choice.get("delta") or {}
             chunk = delta.get("content")
             if chunk:
-                yield chunk
+                yield chunk, None
+
+
+def _iter_sse(response) -> Iterator[str]:
+    """Yield just the content deltas (callers that don't need usage)."""
+    for text, _usage in _iter_sse_events(response):
+        if text:
+            yield text
 
 
 __all__ = ["ApiClient"]

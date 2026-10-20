@@ -1,20 +1,19 @@
 """Terminal presentation: colour, spinner, and snippet highlighting.
-
 FR-15 requires a visible progress indicator within 500 ms of Enter. The spinner
 starts its first frame on a short timer rather than after a full frame delay,
 so it appears immediately even when the LLM answers instantly.
 """
-
 from __future__ import annotations
 
+import math
 import os
+import re
 import shutil
 import sys
 import threading
 import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:  # pragma: no cover - imported lazily to keep this module light
     from .banner import Facts
 
@@ -67,8 +66,35 @@ def paint(text: str, *codes: str) -> str:
     return f"{''.join(codes)}{text}{RESET}"
 
 
+_ANSI = re.compile(r"\033\[[0-9;]*m")
+
+
+def _readline_active() -> bool:
+    """True when ``input()`` will run through readline (an interactive tty)."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    try:
+        import readline  # noqa: F401 - importing it is what enables line editing
+    except ImportError:
+        return False
+    return True
+
+
+def readline_safe(text: str) -> str:
+    """Mark ANSI codes as zero-width so readline measures a prompt correctly.
+
+    Without the \\001/\\002 markers readline counts colour codes as visible
+    characters, which misplaces the cursor and breaks backspace and wrapping.
+    Only prompts passed to ``input()`` need this; the markers are skipped when
+    readline is not in play so they never leak into piped output.
+    """
+    if not _COLOUR or not _readline_active():
+        return text
+    return _ANSI.sub(lambda match: f"\001{match.group(0)}\002", text)
+
+
 def user_prompt() -> str:
-    return paint(_glyph("❯ "), _foreground(_GREEN), BOLD)
+    return readline_safe(paint(_glyph("❯ "), _foreground(_GREEN), BOLD))
 
 
 def assistant_prompt() -> str:
@@ -115,32 +141,119 @@ def highlight_snippet(snippet, max_lines: int = 12) -> None:
         print(paint(f"    {line}", HIGHLIGHT_COLOR))
 
 
-class Spinner:
-    """Minimal animation that starts instantly (AC-38)."""
+#: Labels the default spinner cycles through (Indonesian, like the chat hints).
+THINKING_PHRASES = (
+    "Menyisir kode",
+    "Merangkai konteks",
+    "Menimbang jawaban",
+    "Menyusun kata",
+    "Memoles jawaban",
+)
 
-    def __init__(self, message: str = "Thinking...", interval: float = 0.08):
+#: Wave ramp from the lowest to the highest bar, and its ASCII twin for
+#: terminals that cannot encode block glyphs.
+WAVE = "▁▂▃▄▅▆▇█"
+ASCII_WAVE = "_.-~=+*#"
+
+
+def _gradient(stops: tuple[tuple[int, int, int], ...],
+              steps: int = 5) -> tuple[tuple[int, int, int], ...]:
+    """Blend through ``stops`` and back to the first, so the loop is seamless."""
+    ring = (*stops, stops[0])
+    colours = []
+    for start, end in zip(ring, ring[1:]):
+        for step in range(steps):
+            mix = step / steps
+            colours.append(tuple(round(a + (b - a) * mix)
+                                 for a, b in zip(start, end)))
+    return tuple(colours)
+
+
+class Spinner:
+    """Status line for slow calls (AC-38): a gradient wave, a label with a
+    shimmer sweeping across it, and a running timer.
+
+    The first frame is drawn the moment ``start()`` is called. With no
+    ``message`` the label cycles through ``THINKING_PHRASES``; an explicit
+    message stays put and its shimmer repeats.
+    """
+
+    WAVE_WIDTH = 8
+    PHRASE_SECONDS = 2.4   # how long each rotating label stays on screen
+    SHIMMER_PAUSE = 10     # idle ticks between two shimmer sweeps
+
+    def __init__(self, message: str | None = None, interval: float = 0.08):
         self.message = message
         self.interval = interval
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._started = time.monotonic()
+        self._palette = _gradient((_TEAL, _LOGO_BLUES[0], _LOGO_BLUES[3], _PURPLE))
+        self._label_width = max(len(text) for text in
+                                ((message,) if message else THINKING_PHRASES))
 
-    def _frames(self) -> tuple[str, ...]:
-        encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
-        return FRAMES if "utf" in encoding else ASCII_FRAMES
+    def _label(self, elapsed: float) -> tuple[str, float]:
+        """The label to show, and how many seconds it has been on screen."""
+        if self.message:
+            return self.message, elapsed
+        shown = int(elapsed // self.PHRASE_SECONDS)
+        phrase = THINKING_PHRASES[shown % len(THINKING_PHRASES)]
+        return phrase, elapsed - shown * self.PHRASE_SECONDS
+
+    def _wave(self, tick: int, *, utf8: bool) -> str:
+        """Two blended sine waves drawn as bars, tinted by a drifting gradient."""
+        ramp = WAVE if utf8 else ASCII_WAVE
+        cells = []
+        for column in range(self.WAVE_WIDTH):
+            level = (math.sin(tick * 0.50 - column * 0.70)
+                     + math.sin(tick * 0.31 + column * 0.50)) / 4 + 0.5
+            glyph = ramp[min(len(ramp) - 1, int(level * len(ramp)))]
+            tint = self._palette[(column * 2 + tick // 2) % len(self._palette)]
+            cells.append(paint(glyph, _foreground(tint)))
+        return "".join(cells)
+
+    def _shimmer(self, text: str, age: float) -> str:
+        """The label in dim ink with a bright band sweeping across it."""
+        cycle = len(text) + self.SHIMMER_PAUSE
+        sweep = int(age / self.interval)
+        # Rotating labels sweep once, then rest; a fixed label sweeps forever.
+        centre = (sweep % cycle if self.message else min(sweep, cycle - 1)) - 2
+        letters = []
+        for index, char in enumerate(text):
+            gap = abs(index - centre)
+            if gap == 0:
+                letters.append(paint(char, _foreground(_SHINE), BOLD))
+            else:
+                letters.append(paint(char, _foreground(_TEAL if gap == 1 else _DIM)))
+        return "".join(letters)
+
+    def _frame(self, tick: int) -> str:
+        """One full status line, trimmed so a redraw can never wrap."""
+        elapsed = time.monotonic() - self._started
+        text, age = self._label(elapsed)
+        timer = f"{elapsed:4.1f}s"
+        room = _terminal_columns() - (2 + self.WAVE_WIDTH + 1 + 1 + len(timer)) - 1
+        width = max(1, min(self._label_width, room))
+        text = text[:width]
+        return (
+            "  " + self._wave(tick, utf8=_utf8()) + " "
+            + self._shimmer(text, age) + " " * (width - len(text))
+            + " " + paint(timer, _foreground(_DIM))
+        )
 
     def _run(self) -> None:
-        frames = self._frames()
-        position = 0
+        tick = 0
         while not self._stop.is_set():
-            if _COLOUR and sys.stdout.isatty():
-                sys.stdout.write(f"\r{paint(frames[position % len(frames)], CYAN)} {self.message}")
-                sys.stdout.flush()
-            position += 1
+            sys.stdout.write("\r" + self._frame(tick) + "\033[K")
+            sys.stdout.flush()
+            tick += 1
             self._stop.wait(self.interval)
 
     def start(self) -> "Spinner":
         if not (_COLOUR and sys.stdout.isatty()):
             return self
+        self._started = time.monotonic()
+        sys.stdout.write("\033[?25l")  # hide the cursor while animating
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         return self
@@ -150,14 +263,16 @@ class Spinner:
         if self._thread is not None:
             self._thread.join(timeout=1.0)
             self._thread = None
-        if _COLOUR and sys.stdout.isatty():
-            sys.stdout.write("\r" + " " * (len(self.message) + 4) + "\r")
+            sys.stdout.write("\r\033[K\033[?25h")  # wipe the line, show the cursor
             sys.stdout.flush()
 
 
 @contextmanager
-def thinking(message: str = "Thinking..."):
-    """Context manager wrapping a slow call with a spinner."""
+def thinking(message: str | None = None):
+    """Context manager wrapping a slow call with a spinner.
+
+    Without a message the label cycles through ``THINKING_PHRASES``.
+    """
     spinner = Spinner(message).start()
     try:
         yield spinner
@@ -185,6 +300,7 @@ _GREEN = (74, 222, 128)         # #4ade80
 _PURPLE = (139, 140, 246)       # #8b8cf6
 _YELLOW = (245, 185, 66)        # #f5b942
 _MODEL_TEXT = (156, 199, 245)   # #9cc7f5
+_SHINE = (226, 240, 255)        # #e2f0ff
 _CHIPS = {
     "index_empty": ((74, 58, 18), _YELLOW),      # #4a3a12 / #f5b942
     "index_ready": ((18, 61, 42), _GREEN),       # #123d2a / #4ade80
@@ -193,16 +309,17 @@ _CHIPS = {
     "rtk_on": ((15, 61, 58), _TEAL),             # #0f3d3a / #2fd0c0
 }
 
-#: The 5x5 logo of the reference: each cell is two columns wide, so every row
-#: is exactly ten characters. Cells are (text, colour); None leaves the cell
-#: blank. Diagonal cells borrow their row's blue, the right stroke is teal,
-#: and the bottom row closes with #3b8fe0.
+#: The N emblem, traced from the reference: five rows, nine columns wide. The
+#: left stroke and the stair-step diagonal take their row's blue, the right
+#: stroke is teal, and the bottom row closes with a wider bar. Rows are
+#: (text, colour) runs; a None colour leaves the run blank.
+_LOGO_WIDTH = 9
 _LOGO = (
-    (("██", _LOGO_BLUES[0]), ("  ", None), ("  ", None), ("  ", None), ("██", _TEAL)),
-    (("██", _LOGO_BLUES[1]), ("██", _LOGO_BLUES[1]), ("  ", None), ("  ", None), ("██", _TEAL)),
-    (("██", _LOGO_BLUES[2]), ("  ", None), ("██", _LOGO_BLUES[2]), ("  ", None), ("██", _TEAL)),
-    (("██", _LOGO_BLUES[3]), ("  ", None), ("  ", None), ("██", _LOGO_BLUES[3]), ("██", _TEAL)),
-    (("██", _LOGO_BLUES[4]), ("  ", None), ("  ", None), ("██", _LOGO_BLUES[2]), ("██", _LOGO_BLUES[2])),
+    (("███", _LOGO_BLUES[0]), ("    ", None), ("██", _TEAL)),
+    (("████", _LOGO_BLUES[1]), ("   ", None), ("██", _TEAL)),
+    (("██", _LOGO_BLUES[2]), (" ", None), ("██", _LOGO_BLUES[2]), ("  ", None), ("██", _TEAL)),
+    (("██", _LOGO_BLUES[3]), ("  ", None), ("██", _LOGO_BLUES[3]), (" ", None), ("██", _TEAL)),
+    (("██", _LOGO_BLUES[4]), ("   ", None), ("████", _LOGO_BLUES[2])),
 )
 
 #: Logo and typographic glyphs fall back to ASCII outside UTF-8 output.
@@ -291,27 +408,39 @@ def _project_line(facts: Facts, width: int, *, utf8: bool) -> str:
     return _fit(line, max(1, width), utf8=utf8).rstrip()
 
 
-def _chips(facts: Facts) -> list[_Segment]:
-    """Status chips; without colour the labels fall back to plain text."""
+#: Longest model / index text a chip may carry before it is middle-truncated.
+_MODEL_MAX = 24
+_INDEX_MAX = 30
+
+
+def _chip_rows(facts: Facts, *, utf8: bool, columns: int) -> list[list[_Segment]]:
+    """Status chips wrapped to ``columns``; without colour they are plain text."""
+
+    def clip(text: str, width: int) -> str:
+        return _fit(text, min(len(text), width), utf8=utf8)
+
     ready = facts.index_ready
+    index_text = clip(facts.index, _INDEX_MAX) if ready else "empty"
     chips = (
-        (f"index {'ready' if ready else 'empty'}",
-         _CHIPS["index_ready" if ready else "index_empty"]),
-        (f"model {facts.model}", _CHIPS["model"]),
+        (f"index {index_text}", _CHIPS["index_ready" if ready else "index_empty"]),
+        (f"model {clip(facts.model, _MODEL_MAX)}", _CHIPS["model"]),
         (f"rtk {facts.rtk}", _CHIPS["rtk_on" if facts.rtk == "on" else "rtk_off"]),
     )
-    row: list[_Segment] = []
-    for position, (label, colours) in enumerate(chips):
-        if _COLOUR:
-            background, foreground = colours
-            if position:
-                row.append(_seg(" "))
-            row.append(_seg(f" {label} ", foreground, background))
-        else:
-            if position:
-                row.append(_seg("  "))
-            row.append(_seg(label))
-    return row
+    budget = max(10, columns - 2)  # banner() indents every row by two columns
+    gap = 1 if _COLOUR else 2
+    rows: list[list[_Segment]] = [[]]
+    used = 0
+    for label, (background, foreground) in chips:
+        piece = f" {label} " if _COLOUR else label
+        if rows[-1] and used + gap + len(piece) > budget:
+            rows.append([])  # wrap whole chips, never cut one in the middle
+            used = 0
+        if rows[-1]:
+            rows[-1].append(_seg(" " * gap))
+            used += gap
+        rows[-1].append(_seg(piece, foreground, background) if _COLOUR else _seg(piece))
+        used += len(piece)
+    return rows
 
 
 def _banner_rows(
@@ -319,11 +448,11 @@ def _banner_rows(
 ) -> list[list[_Segment]]:
     """Compose the banner: the logo beside the identity, then the chips."""
     name = [_seg("nusa-rg", _TEAL, bold=True), _seg(f" v{facts.version}", _DIM)]
-    chips = _chips(facts)
+    chips = _chip_rows(facts, utf8=utf8, columns=columns)
 
     if columns < 40:
         # Too narrow for the emblem: just the name and the status chips.
-        return [name, chips]
+        return [name, *chips]
 
     if not logo:
         # Piped output or NO_COLOR: plain identity lines, no emblem.
@@ -332,14 +461,14 @@ def _banner_rows(
             [_seg("ask your codebase", _DIM)],
             [_seg(_project_line(facts, columns - 2, utf8=utf8), _DIM)],
             [],
-            chips,
+            *chips,
         ]
 
     right = [
         [],
         name,
         [_seg("ask your codebase", _DIM)],
-        [_seg(_project_line(facts, columns - 14, utf8=utf8), _DIM)],
+        [_seg(_project_line(facts, columns - (_LOGO_WIDTH + 4), utf8=utf8), _DIM)],
         [],
     ]
     rows = [
@@ -347,7 +476,7 @@ def _banner_rows(
         for logo_row, text_row in zip(_LOGO, right)
     ]
     rows.append([])
-    rows.append(chips)
+    rows.extend(chips)
     return rows
 
 

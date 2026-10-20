@@ -65,7 +65,7 @@ def test_plain_output_has_no_logo_or_escape_codes(capsys):
         "  ask your codebase",
         "  ~/projects/my-app · main",
         "",
-        "  index ready  model beam  rtk on",
+        "  index 1,284 chunks · 2m ago  model beam  rtk on",
     ]
 
 
@@ -76,13 +76,13 @@ def test_logo_banner_matches_the_reference_rows(capsys):
     lines = _plain_lines(capsys)
 
     assert len(lines) == 7
-    assert lines[0] == "  ██      ██"
-    assert lines[1] == "  ████    ██  nusa-rg v1.3.0"
-    assert lines[2] == "  ██  ██  ██  ask your codebase"
-    assert lines[3] == "  ██    ████  ~/projects/my-app · main"
-    assert lines[4] == "  ██    ████"
+    assert lines[0] == "  ███    ██"
+    assert lines[1] == "  ████   ██  nusa-rg v1.3.0"
+    assert lines[2] == "  ██ ██  ██  ask your codebase"
+    assert lines[3] == "  ██  ██ ██  ~/projects/my-app · main"
+    assert lines[4] == "  ██   ████"
     assert lines[5] == ""
-    assert "index ready" in lines[6]
+    assert "index 1,284 chunks" in lines[6]
     assert "model beam" in lines[6]
     assert "rtk on" in lines[6]
 
@@ -99,7 +99,8 @@ def test_logo_rows_use_the_reference_colours(capsys, monkeypatch):
     assert "\033[38;2;59;143;224m" in lines[2]   # #3b8fe0
     assert "\033[38;2;47;111;208m" in lines[3]   # #2f6fd0
     assert "\033[38;2;34;80;176m" in lines[4]    # #2250b0
-    assert lines[4].count("\033[38;2;59;143;224m") == 2  # bottom c3 + c4
+    assert lines[2].count("\033[38;2;59;143;224m") == 2  # left + middle
+    assert "\033[38;2;59;143;224m" in lines[4]   # bottom bar
 
 
 def test_chips_colour_ready_and_empty_states(capsys, monkeypatch):
@@ -123,10 +124,10 @@ def test_chips_colour_ready_and_empty_states(capsys, monkeypatch):
 
 def test_branch_is_hidden_when_the_checkout_has_none(capsys):
     ui.banner(replace(FACTS, branch=""))
-    out = capsys.readouterr().out
+    lines = _plain_lines(capsys)
 
-    assert "~/projects/my-app" in out
-    assert "·" not in out, "no placeholder is printed for a missing branch"
+    assert lines[2] == "  ~/projects/my-app"
+    assert "my-app ·" not in "\n".join(lines)
 
 
 # -------------------------------------------------------------- narrow layout
@@ -136,12 +137,14 @@ def test_narrow_terminal_keeps_only_the_name_and_chips(capsys, monkeypatch):
     ui.banner(FACTS)
     lines = _plain_lines(capsys)
 
-    assert len(lines) == 2
     assert lines[0] == "  nusa-rg v1.3.0"
     assert "█" not in "\n".join(lines)
-    assert "index ready" in lines[1]
-    assert "model beam" in lines[1]
-    assert "rtk on" in lines[1]
+    rest = "\n".join(lines[1:])
+    assert "index 1,284 chunks" in rest
+    assert "model beam" in rest
+    assert "rtk on" in rest
+    assert "ask your codebase" not in rest
+    assert "~/projects/my-app" not in rest
 
 
 def test_long_project_is_middle_truncated_to_the_terminal(capsys, monkeypatch):
@@ -193,7 +196,7 @@ def test_banner_falls_back_to_ascii_outside_utf8(monkeypatch):
     ui.banner(FACTS)
     out = ANSI.sub("", "".join(fake.written))
 
-    assert "##      ##" in out, "the logo is drawn with # cells"
+    assert "###    ##" in out, "the logo is drawn with # cells"
     assert "nusa-rg v1.3.0" in out
     assert "~/projects/my-app * main" in out
     assert "█" not in out and "·" not in out

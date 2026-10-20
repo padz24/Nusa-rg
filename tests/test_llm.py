@@ -19,6 +19,7 @@ from nusa_rg.llm.base import (
     LocalModelError,
     ProviderUnavailableError,
     RateLimitError,
+    Usage,
 )
 from nusa_rg.llm.local import LocalLLMRunner, estimate_tokens
 
@@ -38,7 +39,7 @@ class FakeResponse:
     def json(self):
         return self._payload
 
-    def iter_lines(self):
+    def iter_lines(self, chunk_size=512):
         return iter(self._lines or [])
 
 
@@ -412,6 +413,61 @@ def test_sse_stream_is_parsed():
     ])
     response = client.generate("hi", stream=True)
     assert response.text == "Hello"
+
+
+def test_stream_requests_and_reports_usage():
+    client = ApiClient("https://api.openai.com/v1", "sk-x", "m")
+    captured = {}
+
+    def post(payload, stream=False):
+        captured.update(payload)
+        return FakeResponse(lines=[
+            b'data: {"choices":[{"delta":{"content":"He"}}]}',
+            b'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3}}',
+            b"data: [DONE]",
+        ])
+
+    client._post = post
+    seen = []
+    assert "".join(client.iter_stream("hi", on_usage=seen.append)) == "He"
+    assert seen == [Usage(7, 3)]
+    assert captured["stream_options"] == {"include_usage": True}
+
+
+def test_generate_stream_keeps_usage():
+    client = ApiClient("https://api.openai.com/v1", "sk-x", "m")
+    client._post = lambda payload, stream=False: FakeResponse(lines=[
+        b'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+        b'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":5}}',
+        b"data: [DONE]",
+    ])
+
+    response = client.generate("hi", stream=True)
+
+    assert response.text == "Hi"
+    assert response.usage == Usage(2, 5)
+
+
+def test_stream_retries_without_stream_options_when_rejected():
+    client = ApiClient("https://api.openai.com/v1", "sk-x", "m")
+    payloads = []
+    responses = [
+        FakeResponse(status=400,
+                     body=b'{"error":{"message":"unknown field stream_options"}}'),
+        FakeResponse(lines=[
+            b'data: {"choices":[{"delta":{"content":"ok"}}]}',
+            b"data: [DONE]",
+        ]),
+    ]
+
+    def post(payload, stream=False):
+        payloads.append(dict(payload))
+        return responses.pop(0)
+
+    client._post = post
+    assert list(client.iter_stream("hi")) == ["ok"]
+    assert "stream_options" in payloads[0]
+    assert "stream_options" not in payloads[1]
 
 
 # ----------------------------------------------------------------- local model

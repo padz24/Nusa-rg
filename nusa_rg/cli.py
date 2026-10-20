@@ -13,6 +13,7 @@ import click
 from . import __version__, crypto, paths, render, ui
 from . import catalog as catalog_mod
 from . import command as command_mod
+from . import live as live_mod
 from . import style as style_mod
 from . import update as update_mod
 from .command import CommandError
@@ -156,7 +157,8 @@ def _read_multi_line() -> str:
     lines: list[str] = []
     while True:
         try:
-            line = input(ui.paint("  ... > " if lines else "  > ", ui.DIM))
+            line = input(ui.readline_safe(
+                ui.paint("  ... > " if lines else "  > ", ui.DIM)))
         except EOFError:
             print()
             return "\n".join(lines)
@@ -176,7 +178,10 @@ def _read_multi_line() -> str:
 @click.argument("message", required=False)
 @click.option("--project", "-p", default=None, help="Project directory to index first.")
 @click.option("--no-rag", is_flag=True, help="Answer without retrieving project context.")
-@click.option("--stream", is_flag=True, help="Stream the API response as it arrives.")
+@click.option("--stream", is_flag=True,
+              help="Stream the answer live over SSE (the default in a terminal).")
+@click.option("--no-stream", is_flag=True,
+              help="Wait for the whole answer instead of streaming it.")
 @click.option("--markdown/--no-markdown", default=True,
               help="Render Markdown (code blocks, bold, lists). Enabled by default.")
 @click.option("--plain", is_flag=True,
@@ -186,10 +191,11 @@ def _read_multi_line() -> str:
 @click.option("--caveman", is_flag=True,
               help="Answer in telegraphic style to cut output tokens (also /caveman).")
 def chat(message: str | None, project: str | None, no_rag: bool,
-          stream: bool, markdown: bool, plain: bool, do_index: bool,
-          caveman: bool) -> None:
+          stream: bool, no_stream: bool, markdown: bool, plain: bool,
+          do_index: bool, caveman: bool) -> None:
     """Start an interactive chat session, or answer a single message."""
     engine = CoreEngine()
+    stream = _resolve_stream(engine, stream, no_stream)
     session_style = "caveman" if caveman else None
 
     target = project or engine.config.project_path()
@@ -222,12 +228,21 @@ def _auto_index(engine: CoreEngine, target: str) -> None:
         ui.warn(f"indexing skipped: {exc}")
 
 
-def _emit(text: str, *, plain: bool, markdown: bool) -> None:
-    """Print an answer, rendering Markdown unless disabled."""
-    if plain or not markdown:
-        print(text)
-    else:
-        print(render.render_markdown(text))
+def _emit(text: str, *, plain: bool, markdown: bool, lead: str = "") -> None:
+    """Print an answer, rendering Markdown unless disabled.
+
+    ``lead`` (the assistant marker) shares the first line with the answer,
+    except when the answer opens with a block element that needs its own line.
+    """
+    body = text if plain or not markdown else render.render_markdown(text)
+    body = body.lstrip("\n")
+    block_start = text.lstrip().startswith(("```", "|", "---", "#", ">"))
+    if lead and body and not block_start:
+        print(lead + body)
+        return
+    if lead:
+        print(lead.rstrip())
+    print(body)
 
 
 def _print_retrieval(result) -> None:
@@ -238,20 +253,71 @@ def _print_retrieval(result) -> None:
         ui.highlight_snippet(snippet)
 
 
+def _resolve_stream(engine: CoreEngine, stream: bool, no_stream: bool) -> bool:
+    """Decide whether the answer streams.
+
+    The flags win. Without one, a terminal streams as long as the engine can
+    deliver tokens live (SSE); an engine without the hooks keeps its old path.
+    """
+    if no_stream:
+        return False
+    if stream:
+        return True
+    return sys.stdout.isatty() and live_mod.supports_live(engine)
+
+
+def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
+              plain: bool, markdown: bool, style: str | None = None,
+              command_output: str = "", lead: str = "", gap: bool = False):
+    """Ask the engine, print the context and the answer, and return the turn.
+
+    With ``stream`` and an engine that has the live hooks, the answer is printed
+    as the tokens arrive. Anything else takes the classic path: a spinner, then
+    the whole answer. ``gap`` puts a blank line before the answer.
+    """
+    options: dict = {"stream": stream, "skip_retrieval": no_rag, "style": style}
+    if command_output:
+        options["command_output"] = command_output
+
+    if stream and live_mod.supports_live(engine):
+        live = live_mod.LiveTurn(show_retrieval=_print_retrieval, emit=_emit,
+                                 plain=plain, markdown=markdown, lead=lead, gap=gap)
+        try:
+            with ui.thinking() as spinner:
+                live.attach(spinner)
+                turn = engine.ask(message, **options, **live.hooks(engine))
+        except BaseException:
+            live.abort()
+            raise
+        if live.finish(turn.answer):
+            if not live.retrieval_shown:
+                _print_retrieval(turn.retrieval)  # engine never called on_retrieval: late, not lost
+            return turn
+        # Nothing arrived token by token (a one-shot reply): print it the classic way.
+        retrieval_shown = live.retrieval_shown
+    else:
+        with ui.thinking():
+            turn = engine.ask(message, **options)
+        retrieval_shown = False
+
+    if not retrieval_shown:
+        _print_retrieval(turn.retrieval)
+    if gap:
+        print()
+    _emit(turn.answer, plain=plain, markdown=markdown, lead=lead)
+    return turn
+
+
 def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool,
                  plain: bool = False, markdown: bool = True,
                  style: str | None = None) -> None:
     ui.heading(f"nusa-rg {__version__}")
     try:
-        with ui.thinking():
-            turn = engine.ask(message, stream=stream, skip_retrieval=no_rag,
-                              style=style)
+        _run_turn(engine, message, stream=stream, no_rag=no_rag, plain=plain,
+                  markdown=markdown, style=style, gap=True)
     except LLMError as exc:
         ui.error(str(exc))
         return
-    _print_retrieval(turn.retrieval)
-    print()
-    _emit(turn.answer, plain=plain, markdown=markdown)
     engine.close()
 
 
@@ -361,10 +427,10 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             raw = raw[:-1] + "\n" + _read_multi_line()
 
         try:
-            with ui.thinking():
-                turn = engine.ask(raw, stream=stream, skip_retrieval=no_rag,
-                                  style=session_style,
-                                  command_output=pending_command)
+            turn = _run_turn(engine, raw, stream=stream, no_rag=no_rag,
+                             plain=plain, markdown=markdown, style=session_style,
+                             command_output=pending_command,
+                             lead=ui.assistant_prompt())
         except LLMError as exc:
             ui.error(str(exc))
             continue
@@ -374,9 +440,6 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             continue
 
         pending_command = ""
-        _print_retrieval(turn.retrieval)
-        print(ui.assistant_prompt())
-        _emit(turn.answer, plain=plain, markdown=markdown)
         if turn.response.used_fallback:
             ui.info(f"answered via fallback provider: {turn.response.provider}")
         usage = turn.response.usage
@@ -396,13 +459,17 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
               help="Seconds before the command is stopped (default: command_timeout).")
 @click.option("--project", "-p", default=None, help="Project directory to index first.")
 @click.option("--no-rag", is_flag=True, help="Answer without retrieving project context.")
-@click.option("--stream", is_flag=True, help="Stream the answer as it arrives.")
+@click.option("--stream", is_flag=True,
+              help="Stream the answer live over SSE (the default in a terminal).")
+@click.option("--no-stream", is_flag=True,
+              help="Wait for the whole answer instead of streaming it.")
 @click.option("--caveman", is_flag=True, help="Answer in telegraphic style.")
 @click.option("--plain", is_flag=True, help="Print the raw Markdown answer.")
 @click.option("--markdown/--no-markdown", default=True, help="Render Markdown.")
 def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
             timeout: int | None, project: str | None, no_rag: bool,
-            stream: bool, caveman: bool, plain: bool, markdown: bool) -> None:
+            stream: bool, no_stream: bool, caveman: bool, plain: bool,
+            markdown: bool) -> None:
     """Run a terminal command (through rtk when installed).
 
     \b
@@ -446,21 +513,18 @@ def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
         sys.exit(result.exit_code)
 
     engine = CoreEngine(settings)
+    stream = _resolve_stream(engine, stream, no_stream)
     target = project or engine.config.project_path()
     if target and not no_rag:
         _auto_index(engine, target)
     try:
-        with ui.thinking():
-            turn = engine.ask(question, stream=stream, skip_retrieval=no_rag,
-                              style="caveman" if caveman else None,
-                              command_output=result.for_prompt())
+        _run_turn(engine, question, stream=stream, no_rag=no_rag, plain=plain,
+                  markdown=markdown, style="caveman" if caveman else None,
+                  command_output=result.for_prompt(), gap=True)
     except LLMError as exc:
         ui.error(str(exc))
         engine.close()
         sys.exit(1)
-    _print_retrieval(turn.retrieval)
-    print()
-    _emit(turn.answer, plain=plain, markdown=markdown)
     engine.close()
 
 

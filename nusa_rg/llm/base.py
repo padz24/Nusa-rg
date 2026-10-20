@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Callable, Iterator
 
 
 class LLMError(RuntimeError):
@@ -75,6 +76,25 @@ class LLMClient(ABC):
         ``context`` is the retrieved project text and ``system`` the configured
         persona; implementations decide whether to embed or forward them.
         """
+
+    def supports_stream(self) -> bool:
+        """True when :meth:`iter_stream` can produce incremental deltas."""
+        return False
+
+    def iter_stream(self, prompt: str, *, context: str = "",
+                    system: str = "",
+                    on_usage: Callable[[Usage], None] | None = None
+                    ) -> Iterator[str]:
+        """Yield text deltas as they arrive (AC-41).
+
+        ``on_usage`` receives the token counts when the provider reports them
+        in the stream (OpenAI-compatible servers only do so when asked).
+
+        Clients whose backend cannot stream incrementally leave
+        ``supports_stream`` at ``False``; callers then use :meth:`generate`
+        and render the answer whole.
+        """
+        raise LLMError(f"{self.name} does not support streaming")
 
     def health_check(self) -> tuple[bool, str]:
         """Return ``(ok, message)`` describing readiness (FR-08)."""
