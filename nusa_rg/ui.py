@@ -13,6 +13,10 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - imported lazily to keep this module light
+    from .banner import Facts
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -168,97 +172,52 @@ def heading(text: str) -> None:
 
 
 # ------------------------------------------------------------------- banner
-#: Banner palette, sampled from the pixel-art reference: the blocky N runs
-#: cyan at the top to royal blue at the base, its staircase is electric blue
-#: and the right stroke fades turquoise to mint; the wordmark is cyan, the
-#: tagline turquoise, and the status row electric blue.
-_CYAN = (78, 197, 252)        # #4EC5FC
-_SKY = (47, 169, 240)         # cyan-blue gradient step
-_ELECTRIC = (31, 154, 238)    # #1F9AEE
-_ROYAL = (9, 74, 176)         # #094AB0
-_TURQUOISE = (55, 198, 198)   # #37C6C6
-_MINT = (64, 208, 192)        # #40D0C0
+#: Banner palette, sampled from the pixel-art reference: the blocky N steps
+#: through the blues from light at the top to dark at the base, its right
+#: stroke stays mint, and the status box frames it in teal with sky-blue
+#: labels, light-grey values, and a muted version tag.
+_BLUE_TOP = (61, 182, 243)      # #3DB6F3  top block of the N
+_BLUE_HIGH = (53, 170, 240)     # #35AAF0
+_BLUE_MID = (46, 154, 231)      # #2E9AE7  staircase step
+_BLUE_LOW = (43, 142, 227)      # #2B8EE3
+_BLUE_STEP = (36, 134, 224)     # #2486E0  staircase step
+_BLUE_DEEP = (31, 102, 201)     # #1F66C9
+_BLUE_DARK = (26, 79, 173)      # #1A4FAD
+_BLUE_BASE = (29, 119, 214)     # #1D77D6  bottom mass of the N
+_MINT = (51, 204, 190)          # #33CCBE  right stroke of the N
+_LABEL = (74, 184, 245)         # #4AB8F5  box labels and title
+_VALUE = (230, 230, 230)        # #E6E6E6  box values
+_MUTED = (138, 143, 152)        # #8A8F98  version tag
+_BORDER = (45, 180, 173)        # #2DB4AD  box frame and bracket
 
-#: 5-row pixel glyphs for the wordmark; "#" marks a filled cell. ``_wordmark``
-#: joins them into rows of exactly 34 columns, trailing blanks included.
-_WORDMARK_GLYPHS = {
-    "N": ("#  #", "## #", "# ##", "#  #", "#  #"),
-    "U": ("#  #", "#  #", "#  #", "#  #", "####"),
-    "S": ("####", "#   ", "####", "   #", "####"),
-    "A": ("####", "#  #", "####", "#  #", "#  #"),
-    "-": ("    ", "    ", "####", "    ", "    "),
-    "R": ("####", "#  #", "####", "# # ", "#  #"),
-    "G": ("####", "#   ", "# ##", "#  #", "####"),
-}
-
-
-def _wordmark(fill: str) -> tuple[str, ...]:
-    rows = [""] * 5
-    for position, letter in enumerate("NUSA-RG"):
-        if position:
-            rows = [row + " " for row in rows]
-        rows = [row + part for row, part in zip(rows, _WORDMARK_GLYPHS[letter])]
-    return tuple(row.replace("#", fill) for row in rows)
-
-
-_TAGLINE = "LOCAL PROJECT RAG  •  CODING ASSISTANT"
-_RULE = "─" * 42
-_STATUS = "─ [ PROJECT CONTEXT • LOCAL AI • READY ] ─"
-
-#: The blocky N of the reference banner (8 columns, 10 rows): thick left and
-#: right strokes with a two-cell staircase between them. Each row is a tuple
-#: of (text, colour) segments; None leaves text plain.
+#: The blocky N of the reference (9 columns, 5 rows). Each row is a tuple of
+#: (text, colour) segments; None leaves text plain. The right stroke keeps the
+#: last two columns and the staircase shifts one column per row.
 _N_ART = (
-    (("████", _CYAN), ("  ", None), ("██", _CYAN)),
-    (("████", _CYAN), ("  ", None), ("██", _CYAN)),
-    (("██", _SKY), (" ", None), ("██", _ELECTRIC), (" ", None), ("██", _TURQUOISE)),
-    (("██", _SKY), (" ", None), ("██", _ELECTRIC), (" ", None), ("██", _TURQUOISE)),
-    (("██", _ELECTRIC), ("  ", None), ("████", _TURQUOISE)),
-    (("██", _ELECTRIC), ("  ", None), ("████", _MINT)),
-    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
-    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
-    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
-    (("██", _ROYAL), ("  ", None), ("████", _MINT)),
+    (("███", _BLUE_TOP), ("    ", None), ("██", _MINT)),
+    (("████", _BLUE_HIGH), ("   ", None), ("██", _MINT)),
+    (("██", _BLUE_LOW), (" ", None), ("██", _BLUE_MID), ("  ", None), ("██", _MINT)),
+    (("██", _BLUE_DEEP), ("  ", None), ("██", _BLUE_STEP), (" ", None), ("██", _MINT)),
+    (("██", _BLUE_DARK), ("   ", None), ("████", _BLUE_BASE)),
 )
 
-_N_ART_ASCII = tuple(
-    tuple((text.replace("█", "#"), colour) for text, colour in row)
-    for row in _N_ART
-)
+#: The rounded bracket closing the emblem, one column wider than the N.
+_BRACKET = "╰────────╯"
 
+#: Left column width: the N padded, and the bracket.
+_LEFT_WIDTH = 10
 
-def _banner_variants():
-    """Compose the (wide, narrow) row sets for block and ASCII terminals."""
-    def right_block(wordmark, tagline, rule, status):
-        return [((row, _CYAN),) for row in wordmark] + [
-            (("", None),),
-            ((tagline, _TURQUOISE),),
-            (("", None),),
-            ((rule, _SKY),),
-            ((status, _ELECTRIC),),
-        ]
+#: Narrowest box interior; wider values grow the box when the terminal allows.
+_MIN_BOX_INNER = 38
 
-    def compose(n_art, wordmark, bar, tagline, rule, status):
-        rows = right_block(wordmark, tagline, rule, status)
-        wide = [tuple(left) + (("  " + bar + "  ", _TURQUOISE),) + tuple(rest)
-                for left, rest in zip(n_art, rows)]
-        narrow = [tuple(rest) for rest in rows]
-        return tuple(wide), tuple(narrow)
+#: The wide layout (indent + emblem + gap + box) needs this many columns.
+_WIDE_BANNER_MIN = 2 + _LEFT_WIDTH + 2 + _MIN_BOX_INNER + 2
 
-    blocks = compose(_N_ART, _wordmark("█"), "│", _TAGLINE, _RULE, _STATUS)
-    ascii_ = compose(
-        _N_ART_ASCII, _wordmark("#"), "|",
-        _TAGLINE.replace("•", "*"), _RULE.replace("─", "-"),
-        _STATUS.replace("─", "-").replace("•", "*"),
-    )
-    return blocks, ascii_
-
-
-(_EMBLEM, _EMBLEM_NARROW), (_EMBLEM_ASCII, _EMBLEM_ASCII_NARROW) = (
-    _banner_variants())
-
-#: The wide banner is 57 columns; anything narrower gets the wordmark block.
-_FULL_BANNER_MIN = 58
+#: Box-drawing and typographic marks fall back to these outside UTF-8 output.
+_ASCII = str.maketrans({
+    "█": "#", "│": "|", "─": "-", "╭": "+", "╮": "+", "╰": "+", "╯": "+",
+    "·": "*", "—": "-", "…": "~",
+})
 
 
 def _terminal_columns() -> int:
@@ -285,22 +244,91 @@ def _foreground(rgb: tuple[int, int, int]) -> str:
     return f"\033[38;5;{cube}m"
 
 
-def banner() -> None:
-    """Print the NUSA-RG banner: pixel N, wordmark, tagline, status row.
+def _fit(text: str, width: int, *, utf8: bool) -> str:
+    """Pad ``text`` to ``width`` columns, middle-truncating when too long."""
+    if len(text) <= width:
+        return text.ljust(width)
+    if width < 3:
+        return text[:width]
+    keep = width - 1
+    head = (keep + 1) // 2
+    marker = "…" if utf8 else "~"
+    return text[:head] + marker + text[len(text) - (keep - head):]
 
-    The pixel emblem only fits beside the wordmark on terminals at least
-    ``_FULL_BANNER_MIN`` columns wide; anything narrower gets the wordmark
-    block on its own. Colours are dropped when output is piped, NO_COLOR is
-    set, or --no-colour is given, and block glyphs fall back to ASCII
-    outside a UTF-8 terminal.
-    """
-    encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
-    utf8 = "utf" in encoding
-    if _terminal_columns() >= _FULL_BANNER_MIN:
-        rows = _EMBLEM if utf8 else _EMBLEM_ASCII
+
+def _status_card(
+    facts: Facts, *, utf8: bool, max_inner: int
+) -> list[list[tuple[str, tuple[int, int, int] | None]]]:
+    """Rows of the status box: title line, one line per fact, bottom border."""
+    pairs = (
+        ("project", facts.project),
+        ("branch", facts.branch),
+        ("index", facts.index),
+        ("model", facts.model),
+        ("rtk", facts.rtk),
+    )
+    label_w = max(len(label) for label, _ in pairs)
+    needed = 1 + label_w + 2 + max(len(value) for _, value in pairs) + 1
+    inner = min(max(_MIN_BOX_INNER, needed), max(12, max_inner))
+    value_w = max(1, inner - label_w - 4)
+
+    tag = f"v{facts.version}"
+    fill = max(0, inner - 11 - len(tag))
+    rows = [[
+        ("╭─ ", _BORDER),
+        ("nusa-rg", _LABEL),
+        (" ", None),
+        (tag, _MUTED),
+        (" ", None),
+        ("─" * fill, _BORDER),
+        ("╮", _BORDER),
+    ]]
+    for label, value in pairs:
+        rows.append([
+            ("│ ", _BORDER),
+            (label.ljust(label_w), _LABEL),
+            ("  ", None),
+            (_fit(value, value_w, utf8=utf8), _VALUE),
+            (" │", _BORDER),
+        ])
+    rows.append([("╰" + "─" * inner + "╯", _BORDER)])
+    return rows
+
+
+def _banner_rows(facts: Facts, *, utf8: bool, columns: int):
+    """Compose the card, beside the pixel emblem when the width allows."""
+    wide = columns >= _WIDE_BANNER_MIN
+    limit = columns - _LEFT_WIDTH - 6 if wide else columns - 4
+    card = _status_card(facts, utf8=utf8, max_inner=limit)
+    if wide:
+        left = [tuple(row) + ((" ", None),) for row in _N_ART]
+        left.append(((" " * _LEFT_WIDTH, None),))
+        left.append(((_BRACKET, _BORDER),))
+        rows = [tuple(cell) + (("  ", None),) + tuple(line)
+                for cell, line in zip(left, card)]
     else:
-        rows = _EMBLEM_NARROW if utf8 else _EMBLEM_ASCII_NARROW
-    for row in rows:
+        rows = [tuple(line) for line in card]
+    if utf8:
+        return rows
+    return [tuple((text.translate(_ASCII), colour) for text, colour in row)
+            for row in rows]
+
+
+def banner(facts: Facts | None = None) -> None:
+    """Print the opening banner: the pixel N beside a runtime status card.
+
+    ``facts`` come from :func:`nusa_rg.banner.collect` when omitted. The card
+    sits beside the emblem on terminals at least ``_WIDE_BANNER_MIN`` columns
+    wide and stands alone when narrower, truncating long values to fit.
+    Colours are dropped when output is piped, NO_COLOR is set, or --no-colour
+    is given, and glyphs fall back to ASCII outside a UTF-8 terminal.
+    """
+    if facts is None:
+        from .banner import collect
+
+        facts = collect()
+    utf8 = "utf" in (getattr(sys.stdout, "encoding", "") or "").lower()
+    for row in _banner_rows(facts, utf8=utf8, columns=_terminal_columns()):
         print("  " + "".join(
             paint(text, _foreground(colour)) if colour else text
             for text, colour in row

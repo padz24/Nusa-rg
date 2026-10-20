@@ -317,19 +317,17 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       plain: bool = False, markdown: bool = True,
                       style: str | None = None) -> None:
     ui.banner()
-    ui.heading(f"nusa-rg {__version__} - type /exit to quit, /help for commands")
-    root = engine.config.project_path()
-    provider = engine.config.get("model_provider", "external")
-    ui.info(f"provider: {provider} | project: {root or '(none indexed)'}")
-    try:
-        files, chunks = engine.index.count()
-        if files:
-            ui.info(f"index: {files} file(s), {chunks} chunk(s)")
-        elif not no_rag:
+    ui.heading("type /exit to quit, /help for commands")
+    if not no_rag:
+        # The card above already shows the chunk count; only the empty state
+        # needs the actionable hint.
+        try:
+            files, _chunks = engine.index.count()
+        except Exception:  # noqa: BLE001 - a broken index must not block chat
+            files = 0
+        if not files:
             ui.info("index: empty - run 'nusa-rg index <path>' "
                     "for context-aware answers")
-    except Exception:  # noqa: BLE001 - a broken index must not block chat
-        pass
 
     session_style = style
     pending_command = ""

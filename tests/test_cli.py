@@ -59,7 +59,7 @@ def test_bare_invocation_shows_the_banner(runner):
     """A bare `nusa-rg` prints the banner above the command list."""
     result = run(runner, [])
     assert result.exit_code == 2
-    assert "LOCAL PROJECT RAG" in result.output, "the tagline renders"
+    assert "╭─ nusa-rg v" in result.output, "the status card renders"
     assert "Commands:" in result.output
 
 
