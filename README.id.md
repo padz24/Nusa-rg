@@ -44,17 +44,35 @@ provider, indeks, dan model lokal.
 
 ## Pemasangan
 
+Satu baris, tanpa clone sendiri:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/padz24/Nusa-rg/main/install.sh | bash
+```
+
+Skripnya mengkloning sumber ke `~/nusa-rg`, memeriksa arsitektur dan versi
+Termux, memasang dua modul yang tidak punya wheel Android di PyPI
+(`cryptography` dan `PyYAML`), memasang paketnya, dan bisa membangun llama.cpp
+untuk jalur lokal. Skrip itu mencetak emblem, warna, dan gelombang status
+yang sama dengan perintah `nusa-rg`, jadi proses yang memakan menit
+menampilkan kemajuan, bukan keheningan.
+
+Untuk melewati pembangunan llama.cpp opsional, yang merupakan langkah
+terlama:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/padz24/Nusa-rg/main/install.sh | NUSA_RG_SKIP_LLAMA=1 bash
+```
+
+`NUSA_RG_NO_SPINNER=1` mematikan gelombang statusnya.
+`NUSA_RG_REPO_DIR=/path` memasang pohon yang sudah Anda miliki.
+
+Dari sebuah checkout, skrip yang sama berjalan di tempat:
+
 ```bash
 git clone https://github.com/padz24/Nusa-rg.git ~/nusa-rg
 cd ~/nusa-rg && ./install.sh
 ```
-
-Skrip pemasangan memeriksa arsitektur dan versi Termux, memasang dua modul
-yang tidak punya wheel Android di PyPI (`cryptography` dan `PyYAML`),
-memasang paketnya, dan bisa membangun llama.cpp untuk jalur lokal. Skrip itu
-mencetak emblem, warna, dan gelombang status yang sama dengan perintah
-`nusa-rg`, jadi proses yang memakan menit menampilkan kemajuan, bukan
-keheningan. `NUSA_RG_SKIP_LLAMA=1` melewati pembangunan llama.cpp opsional.
 
 Dari repositori Termux, setelah diterbitkan:
 

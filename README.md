@@ -44,17 +44,34 @@ provider catalogue, the index, and the local model.
 
 ## Install
 
+One line, no clone of your own:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/padz24/Nusa-rg/main/install.sh | bash
+```
+
+The script clones the source into `~/nusa-rg`, checks the architecture and
+the Termux version, installs the two modules PyPI ships no Android wheel for
+(`cryptography` and `PyYAML`), installs the package, and can build llama.cpp
+for the local path. It prints the same emblem, colours and status wave as the
+`nusa-rg` command, so a build that takes minutes shows progress instead of
+silence.
+
+To skip the optional llama.cpp build, which is the slow step:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/padz24/Nusa-rg/main/install.sh | NUSA_RG_SKIP_LLAMA=1 bash
+```
+
+`NUSA_RG_NO_SPINNER=1` turns the status wave off. `NUSA_RG_REPO_DIR=/path`
+installs a tree you already have.
+
+From a checkout, the same script runs in place:
+
 ```bash
 git clone https://github.com/padz24/Nusa-rg.git ~/nusa-rg
 cd ~/nusa-rg && ./install.sh
 ```
-
-The installer checks the architecture and the Termux version, installs the two
-modules PyPI ships no Android wheel for (`cryptography` and `PyYAML`),
-installs the package, and can build llama.cpp for the local path. It prints the
-same emblem, colours and status wave as the `nusa-rg` command, so a build that
-takes minutes shows progress instead of silence. `NUSA_RG_SKIP_LLAMA=1`
-skips the optional llama.cpp build.
 
 From a Termux repository, once it is published:
 
