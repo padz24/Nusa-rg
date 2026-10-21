@@ -129,6 +129,16 @@ def test_chat_starts_a_session_on_its_own(runner):
     assert stored[0].path.is_file()
 
 
+def test_chat_shows_the_session_details_when_it_ends(runner):
+    """The id and the resume command are printed again at the end."""
+    result = run(runner, ["chat", "--no-rag"], input="/exit\n")
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("resume with: nusa-rg chat --session") == 2
+    assert result.output.index("session ended") < result.output.rindex(
+        "resume with: nusa-rg chat --session")
+
+
 def test_one_shot_chat_is_saved_automatically(runner, monkeypatch):
     set_api_key(runner)
     install_fake_api(monkeypatch)

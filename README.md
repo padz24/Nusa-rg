@@ -112,6 +112,9 @@ which one it is, and saves each turn as it happens:
 resume with: nusa-rg chat --session 20261021-010019-2144
 ```
 
+The same block is printed again when the session ends, so the id and the
+command that brings the conversation back are at hand when you leave.
+
 Give it an id to pick a conversation back up:
 
 ```bash
@@ -519,7 +522,7 @@ resulting text as labelled, sanitised context.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 612 tests
+pytest                    # 613 tests
 python -m nusa_rg       # run without installing
 ```
 

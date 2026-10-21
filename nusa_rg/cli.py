@@ -731,6 +731,9 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
         ui.footer(turn.retrieval.duration,
                   usage.prompt_tokens + usage.completion_tokens)
 
+    # The session is kept, so say so while the user is still here: the id and
+    # the command that brings the conversation back.
+    _print_session_details(session)
     engine.close()
 
 
