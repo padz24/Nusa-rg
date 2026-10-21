@@ -465,44 +465,6 @@ dan empat konstruksi yang dilewatkan markdown2 (subscript, superscript,
 
 `nusa-rg chat --plain "..."` mencetak Markdown mentah sebagai gantinya.
 
-## Warna
-
-Semua warna ada di `nusa_rg/ui.py`, sehingga tampilannya sama di setiap
-perangkat. Truecolor dipakai ketika `COLORTERM` berbunyi `truecolor` atau
-`24bit`; selain itu nilai yang sama didekati dengan kubus 256 warna.
-
-| Letak | Warna |
-| :-- | :-- |
-| Emblem, lima langkah turun pada garis kiri | #38b6ff, #3aa5f0, #3b8fe0, #2f6fd0, #2250b0 |
-| Emblem, garis kanan | teal #2fd0c0 |
-| `nusa-rg` pada banner | teal #2fd0c0, tebal |
-| Teks sekunder, chip `rtk off` | abu-abu #6c7d86 |
-| Chip `index ready` | hijau #4ade80 di atas #123d2a |
-| Chip `index empty` | kuning #f5b942 di atas #4a3a12 |
-| Chip `model` | biru #9cc7f5 di atas #173a63 |
-| Chip `rtk on` | teal #2fd0c0 di atas #0f3d3a |
-| Chip `rtk off` | abu-abu #6c7d86 di atas #222c32 |
-| Prompt `❯` | hijau #4ade80, tebal |
-| Penanda asisten `◆` | ungu #8b8cf6, tebal |
-| Petunjuk di dalam chat | teal #2fd0c0 untuk perintahnya, abu-abu #6c7d86 untuk katanya, kuning #f5b942 untuk ajakan mengindeks |
-| Konteks yang diambil | kuning, miring |
-| Kepala bagian | sian, tebal |
-| Kesalahan | merah, tebal |
-| Entri provider | satu dari dua belas aksen, ditentukan dari id provider |
-
-Dua belas aksen provider itu adalah teal #2fd0c0, ungu #8b8cf6, hijau #4ade80,
-kuning #f5b942, biru #9cc7f5, es #e2f0ff, salmon #ff7a7a, jingga #ffa860,
-mint #78e0c8, lilac #ce9aff, langit #7ac4ff, dan pasir #e8c878. Sebuah
-provider selalu mendapat aksen yang sama, karena pilihan itu dihitung dari
-CRC32 id-nya.
-
-Panel kode memakai delapan warna ANSI: kata kunci biru, string hijau, komentar
-abu-abu, angka kuning, nama fungsi sian.
-
-`NO_COLOR=1` atau `--no-colour` mematikan paletnya. `NUSA_RG_FORCE_COLOR=1`
-memaksakannya menyala saat keluaran dialirkan, dan `NO_HYPERLINKS=1`
-mematikan tautan yang bisa diklik.
-
 ## Arsitektur
 
 ```

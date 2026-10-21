@@ -455,43 +455,6 @@ shortcodes), applied outside code regions.
 
 `nusa-rg chat --plain "..."` prints the raw Markdown instead.
 
-## Colours
-
-Every colour lives in `nusa_rg/ui.py`, so the chrome looks the same on every
-device. Truecolor is used when `COLORTERM` says `truecolor` or `24bit`;
-otherwise the same values are approximated in the 256-colour cube.
-
-| Where | Colour |
-| :-- | :-- |
-| Emblem, five steps down the left stroke | #38b6ff, #3aa5f0, #3b8fe0, #2f6fd0, #2250b0 |
-| Emblem, right stroke | teal #2fd0c0 |
-| `nusa-rg` in the banner | teal #2fd0c0, bold |
-| Secondary text, the `rtk off` chip | grey #6c7d86 |
-| `index ready` chip | green #4ade80 on #123d2a |
-| `index empty` chip | yellow #f5b942 on #4a3a12 |
-| `model` chip | blue #9cc7f5 on #173a63 |
-| `rtk on` chip | teal #2fd0c0 on #0f3d3a |
-| `rtk off` chip | grey #6c7d86 on #222c32 |
-| `❯` prompt | green #4ade80, bold |
-| `◆` assistant marker | purple #8b8cf6, bold |
-| Chat hints | teal #2fd0c0 for the commands, grey #6c7d86 for the words, yellow #f5b942 for the index nudge |
-| Retrieved context | yellow, italic |
-| Section headings | cyan, bold |
-| Errors | red, bold |
-| Provider entries | one of twelve accents, chosen from the provider id |
-
-The twelve provider accents are teal #2fd0c0, purple #8b8cf6, green #4ade80,
-yellow #f5b942, blue #9cc7f5, ice #e2f0ff, salmon #ff7a7a, orange #ffa860,
-mint #78e0c8, lilac #ce9aff, sky #7ac4ff, and sand #e8c878. A provider always
-gets the same one, because the choice is a CRC32 of its id.
-
-Code panels use the eight ANSI colours: keywords blue, strings green,
-comments grey, numbers yellow, function names cyan.
-
-`NO_COLOR=1` or `--no-colour` turns the palette off. `NUSA_RG_FORCE_COLOR=1`
-forces it on when the output is piped, and `NO_HYPERLINKS=1` turns the
-clickable links off.
-
 ## Architecture
 
 ```
