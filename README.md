@@ -1,12 +1,6 @@
 # NUSA-RG
 
-```
-  ███    ██
-  ████   ██  nusa-rg v1.3.0
-  ██ ██  ██  ask your codebase
-  ██  ██ ██
-  ██   ████
-```
+![nusa-rg](docs/banner.png)
 
 A coding assistant for the Termux terminal on Android. It indexes a project
 with SQLite FTS5, puts the most relevant snippets in front of the model

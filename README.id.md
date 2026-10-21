@@ -1,12 +1,6 @@
 # NUSA-RG
 
-```
-  ███    ██
-  ████   ██  nusa-rg v1.3.0
-  ██ ██  ██  ask your codebase
-  ██  ██ ██
-  ██   ████
-```
+![nusa-rg](docs/banner.png)
 
 Asisten pemrograman untuk terminal Termux di Android. Alat ini mengindeks
 sebuah proyek dengan SQLite FTS5, menyisipkan potongan kode yang paling
