@@ -101,8 +101,18 @@ on `run`.
 
 ## Sessions
 
-A named session keeps the visible user/assistant turns and the response style,
-so a later command can continue the same conversation:
+Every chat keeps a session. `nusa-rg chat` starts one automatically, shows
+which one it is, and saves each turn as it happens:
+
+```text
+  session    20261021-010019-2144
+  turns      0
+  project    /home/user/projects/my-app
+  stored     /home/user/.nusa-rg/sessions/20261021-010019-2144.json
+resume with: nusa-rg chat --session 20261021-010019-2144
+```
+
+Give it an id to pick a conversation back up:
 
 ```bash
 nusa-rg chat --session fix-auth
@@ -126,6 +136,8 @@ creates an empty session and prints its id. Stored sessions live in
 conversation text is persisted; retrieved code is rebuilt from the index on
 each turn. Prompt history is capped by `session_history_turns` (default 10
 turns), while the file keeps the full transcript.
+
+`/clear` empties the saved history of the running session as well.
 
 ## Providers
 
@@ -503,7 +515,7 @@ resulting text as labelled, sanitised context.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 606 tests
+pytest                    # 609 tests
 python -m nusa_rg       # run without installing
 ```
 

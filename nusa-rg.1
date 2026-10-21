@@ -18,6 +18,11 @@ or the directory named by
 .TP
 .B chat [\fIMESSAGE\fR] [options]
 Start an interactive chat session, or answer a single message and exit.
+Every chat keeps a session: without
+.B \-\-session
+a new one is started automatically, its id and location are printed, and each
+turn is saved as it happens, so the conversation can be picked up again with
+.BR "nusa\-rg chat \-\-session \fIID\fR" .
 Inside a session,
 .BR /exit ,
 .BR /quit ,

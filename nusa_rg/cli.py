@@ -218,6 +218,22 @@ def _save_session(store, session) -> bool:
         return False
 
 
+def _print_session_details(session, *, compact: bool = False) -> None:
+    """Show the session that is being kept, and how to come back to it."""
+    if session is None:
+        return
+    if compact:
+        ui.info(f"session {session.id} · {session.turns} turn(s) · "
+                f"resume: nusa-rg chat --session {session.id}")
+        return
+    print(f"  session    {ui.paint(session.id, ui.BOLD)}")
+    print(f"  turns      {session.turns}")
+    if session.project:
+        print(f"  project    {session.project}")
+    print(f"  stored     {session.path}")
+    ui.info(f"resume with: nusa-rg chat --session {session.id}")
+
+
 def _format_stamp(value: str) -> str:
     """Render an ISO-8601 UTC timestamp compactly for the terminal."""
     return value.replace("T", " ").replace("Z", "")[:16] if value else "unknown"
@@ -274,7 +290,7 @@ def _print_sessions(sessions) -> None:
               help="Answer in telegraphic style to cut output tokens (also /caveman).")
 @click.option("--session", "--session-id", "session_id", default=None,
               callback=_session_id_callback,
-              help="Resume or create a named chat session.")
+              help="Resume a named chat session; without it a new one is started.")
 def chat(message: str | None, project: str | None, no_rag: bool,
           stream: bool, no_stream: bool, markdown: bool, plain: bool,
           do_index: bool, caveman: bool, session_id: str | None) -> None:
@@ -283,11 +299,10 @@ def chat(message: str | None, project: str | None, no_rag: bool,
     stream = _resolve_stream(engine, stream, no_stream)
     session_style = "caveman" if caveman else None
 
-    store = None
+    store = session_mod.SessionStore()
     session = None
     target = project or engine.config.project_path()
     if session_id:
-        store = session_mod.SessionStore()
         try:
             session = store.open(
                 session_id,
@@ -304,14 +319,19 @@ def chat(message: str | None, project: str | None, no_rag: bool,
             _save_session(store, session)
         if not target and session.project:
             target = session.project
-        if session.messages:
-            ui.info(f"resumed session {session.id} ({session.turns} turn(s))")
-        else:
-            ui.info(f"session {session.id}")
         session_style = session.style or session_style
         if session_style and session.style != session_style:
             session.set_style(session_style)
             _save_session(store, session)
+    else:
+        # No id given: start a session of our own, so every chat is kept and
+        # can be picked up again later.
+        try:
+            session = store.create(project=target or "", style=session_style or "")
+        except session_mod.SessionError as exc:
+            ui.error(str(exc))
+            engine.close()
+            sys.exit(2)
 
     if target and do_index and not no_rag:
         _auto_index(engine, target)
@@ -320,8 +340,8 @@ def chat(message: str | None, project: str | None, no_rag: bool,
     if message:
         turn = _single_turn(engine, message, no_rag=no_rag, stream=stream,
                             plain=plain, markdown=markdown, style=session_style,
-                            history=history)
-        if session is not None and store is not None and turn is not None:
+                            history=history, session=session)
+        if session is not None and turn is not None:
             session.add_turn(message, turn.answer)
             _save_session(store, session)
         return
@@ -434,8 +454,9 @@ def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
 def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool,
                  plain: bool = False, markdown: bool = True,
                  style: str | None = None,
-                 history: list[dict[str, str]] | None = None):
+                 history: list[dict[str, str]] | None = None, session=None):
     ui.heading(f"nusa-rg {__version__}")
+    _print_session_details(session, compact=True)
     try:
         return _run_turn(engine, message, stream=stream, no_rag=no_rag,
                          plain=plain, markdown=markdown, style=style,
@@ -600,6 +621,7 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       project: str = "") -> None:
     facts = ui.banner()
     ui.chat_hints(index_empty=not facts.index_ready and not no_rag)
+    _print_session_details(session)
 
     session_style = style
     pending_command = ""

@@ -116,6 +116,49 @@ def test_history_character_budget_keeps_the_newest_turn():
     assert [item["content"] for item in history] == ["question 2", "answer 2"]
 
 
+# ------------------------------------------------------- automatic sessions
+def test_chat_starts_a_session_on_its_own(runner):
+    """No --session flag: the chat still keeps a session of its own."""
+    result = run(runner, ["chat", "--no-rag"], input="/exit\n")
+
+    assert result.exit_code == 0, result.output
+    assert "resume with: nusa-rg chat --session" in result.output
+    stored = SessionStore().list()
+    assert len(stored) == 1
+    assert stored[0].id in result.output
+    assert stored[0].path.is_file()
+
+
+def test_one_shot_chat_is_saved_automatically(runner, monkeypatch):
+    set_api_key(runner)
+    install_fake_api(monkeypatch)
+
+    result = run(runner, ["chat", "remember me", "--no-rag"])
+
+    assert result.exit_code == 0, result.output
+    stored = SessionStore().list()
+    assert len(stored) == 1
+    assert stored[0].id in result.output
+    assert stored[0].messages[0] == {"role": "user", "content": "remember me"}
+    assert stored[0].messages[1] == {"role": "assistant",
+                                     "content": "stub answer"}
+
+
+def test_the_automatic_session_is_resumable(runner, monkeypatch):
+    set_api_key(runner)
+    calls = install_fake_api(monkeypatch, ("answer one", "answer two"))
+
+    run(runner, ["chat", "first", "--no-rag"])
+    session_id = SessionStore().list()[0].id
+
+    run(runner, ["chat", "second", "--no-rag", "--session", session_id])
+
+    assert calls[1]["history"] == [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "answer one"},
+    ]
+
+
 # -------------------------------------------------------------------- resume
 def test_chat_one_shot_resumes_and_saves_history(runner, monkeypatch):
     set_api_key(runner)
@@ -131,7 +174,8 @@ def test_chat_one_shot_resumes_and_saves_history(runner, monkeypatch):
         {"role": "user", "content": "first"},
         {"role": "assistant", "content": "answer one"},
     ]
-    assert "resumed session work" in second.output
+    assert "session work" in second.output
+    assert "resume: nusa-rg chat --session work" in second.output
 
     saved = SessionStore().load("work")
     assert saved.turns == 2
@@ -181,7 +225,8 @@ def test_session_command_creates_and_switches(runner):
 
     assert result.exit_code == 0, result.output
     assert "session demo created" in result.output
-    assert "Sessions (1)" in result.output
+    assert "Sessions (" in result.output
+    assert "demo" in result.output
     assert "Session demo" in result.output
     assert SessionStore().load("demo").turns == 0
 
