@@ -1106,7 +1106,7 @@ def providers() -> None:
 @click.option("--search", "-s", default="", help="Filter by provider id or name.")
 @click.option("--all", "show_all", is_flag=True,
               help="Include providers without an OpenAI-compatible endpoint.")
-@click.option("--limit", type=int, default=20, show_default=True)
+@click.option("--limit", type=int, default=40, show_default=True)
 @click.option("--no-icons", is_flag=True,
               help="Skip the provider logos (no network access).")
 def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> None:
@@ -1126,10 +1126,8 @@ def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> N
                  for entry in rows]
         icon_width = max((ui.visible_width(left) for _, card in cards
                           for left, _ in card), default=8)
-        text_width = max((ui.visible_width(right) for _, card in cards
-                          for _, right in card), default=0)
         for entry, card in cards:
-            _print_provider_card(entry, card, icon_width, text_width)
+            _print_provider_card(entry, card, icon_width)
     else:
         for entry in rows:
             _print_provider_row(entry)
@@ -1179,17 +1177,10 @@ def _provider_card_rows(entry, drawing: list[str]) -> list[tuple[str, str]]:
 
 
 def _print_provider_card(entry, rows: list[tuple[str, str]],
-                         icon_width: int, text_width: int) -> None:
-    """One provider framed in a box, with its logo in its own colour."""
-    accent = ui.provider_accent(entry.id)
-    border = ui.glyph("─") * (icon_width + text_width + 4)
-    print(ui.paint(ui.glyph("┌") + border + ui.glyph("┐"), accent))
+                         icon_width: int) -> None:
+    """One provider, drawn in its own colour."""
     for left, right in rows:
-        print(ui.paint(ui.glyph("│"), accent) + " "
-              + _pad(left, icon_width) + "  "
-              + _pad(right, text_width) + " "
-              + ui.paint(ui.glyph("│"), accent))
-    print(ui.paint(ui.glyph("└") + border + ui.glyph("┘"), accent))
+        print("  " + _pad(left, icon_width) + "  " + right)
 
 
 @providers.command("show")

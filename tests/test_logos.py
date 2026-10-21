@@ -246,18 +246,19 @@ def test_providers_icon_unknown_provider(runner):
 
 
 # ------------------------------------------------------------- box & colour
-def test_provider_list_frames_every_entry(runner, monkeypatch):
-    """One box per provider, so entries cannot run into each other."""
+def test_provider_list_has_no_frame(runner, monkeypatch):
+    """The list is plain rows: only the logo and the colour set it apart."""
     monkeypatch.delenv(logos.DISABLE_ENV, raising=False)
     monkeypatch.setattr(logos, "svg_text", lambda name, timeout=15: SQUARE)
 
     result = run(runner, ["providers", "list", "--search", "groq"])
 
     assert result.exit_code == 0
-    assert "┌" in result.output
-    assert "│" in result.output
-    assert "└" in result.output
-    assert result.output.count("┌") == result.output.count("└")
+    assert "┌" not in result.output
+    assert "│" not in result.output
+    assert "└" not in result.output
+    assert "groq" in result.output
+    assert any(character in result.output for character in "⠿⣿⠟⠛")
 
 
 def test_provider_accents_are_stable_and_varied():
