@@ -136,8 +136,9 @@ is what takes time.
 
 ## Sessions
 
-Every chat keeps a session. Without `--session`, `nusa-rg chat` starts one,
-prints what it is, and saves every turn as it happens:
+Every chat keeps a session. Without `--session`, `nusa-rg chat` starts one and
+saves every turn as it happens. When the session ends, the id and the command
+that brings the conversation back are printed:
 
 ```text
   session    20261021-010019-2144
@@ -146,9 +147,6 @@ prints what it is, and saves every turn as it happens:
   stored     /home/user/.nusa-rg/sessions/20261021-010019-2144.json
 resume with: nusa-rg chat --session 20261021-010019-2144
 ```
-
-The same block is printed when the session ends, so the id and the command
-that brings the conversation back are at hand when you leave.
 
 ```bash
 nusa-rg chat --session fix-auth

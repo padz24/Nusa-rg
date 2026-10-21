@@ -130,13 +130,15 @@ def test_chat_starts_a_session_on_its_own(runner):
 
 
 def test_chat_shows_the_session_details_when_it_ends(runner):
-    """The id and the resume command are printed again at the end."""
+    """The id and the resume command are printed once, when the session ends."""
     result = run(runner, ["chat", "--no-rag"], input="/exit\n")
 
     assert result.exit_code == 0, result.output
-    assert result.output.count("resume with: nusa-rg chat --session") == 2
-    assert result.output.index("session ended") < result.output.rindex(
+    assert result.output.count("resume with: nusa-rg chat --session") == 1
+    assert result.output.index("session ended") < result.output.index(
         "resume with: nusa-rg chat --session")
+    # The banner and the hints are printed, the session block is not.
+    assert "ask your codebase" in result.output
 
 
 def test_one_shot_chat_is_saved_automatically(runner, monkeypatch):

@@ -140,7 +140,8 @@ memakan waktu adalah panggilan ke model.
 ## Sesi percakapan
 
 Setiap chat menyimpan satu sesi. Tanpa `--session`, `nusa-rg chat` memulai
-sesi sendiri, mencetak detailnya, dan menyimpan tiap giliran saat terjadi:
+sesi sendiri dan menyimpan tiap giliran saat terjadi. Saat sesi berakhir, id
+dan perintah untuk melanjutkan percakapan itu dicetak:
 
 ```text
   session    20261021-010019-2144
@@ -149,9 +150,6 @@ sesi sendiri, mencetak detailnya, dan menyimpan tiap giliran saat terjadi:
   stored     /home/user/.nusa-rg/sessions/20261021-010019-2144.json
 resume with: nusa-rg chat --session 20261021-010019-2144
 ```
-
-Blok yang sama dicetak lagi saat sesi berakhir, sehingga id dan perintah
-untuk melanjutkan percakapan itu ada di tangan saat Anda keluar.
 
 ```bash
 nusa-rg chat --session fix-auth

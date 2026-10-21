@@ -345,6 +345,8 @@ def chat(message: str | None, project: str | None, no_rag: bool,
         if session is not None and turn is not None:
             session.add_turn(message, turn.answer)
             _save_session(store, session)
+        # The one-shot ends here, so the session is reported now.
+        _print_session_details(session, compact=True)
         return
 
     _interactive_loop(engine, no_rag=no_rag, stream=stream,
@@ -457,7 +459,6 @@ def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool
                  style: str | None = None,
                  history: list[dict[str, str]] | None = None, session=None):
     ui.heading(f"nusa-rg {__version__}")
-    _print_session_details(session, compact=True)
     try:
         return _run_turn(engine, message, stream=stream, no_rag=no_rag,
                          plain=plain, markdown=markdown, style=style,
@@ -645,7 +646,6 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       project: str = "") -> None:
     facts = ui.banner()
     ui.chat_hints(index_empty=not facts.index_ready and not no_rag)
-    _print_session_details(session)
     # A typed command belongs to the project that is indexed, not to the
     # directory the assistant happens to have been started in.
     command_cwd = _command_cwd(engine)
