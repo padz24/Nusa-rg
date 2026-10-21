@@ -235,6 +235,21 @@ class SessionStore:
             return self.load(sid)
         return self.create(sid, project=project, style=style)
 
+    def prepare(self, session_id: str | None = None, *, project: str = "",
+                style: str = "") -> Session:
+        """The session to use, without writing anything to disk.
+
+        An existing session is loaded; a new one is built in memory. The file
+        appears only when a turn is saved, so a chat that never says anything
+        leaves nothing behind in the session directory.
+        """
+        if session_id:
+            sid = validate_id(session_id)
+            if self.exists(sid):
+                return self.load(sid)
+            return Session(id=sid, project=project, style=style)
+        return Session(id=self._fresh_id(), project=project, style=style)
+
     def save(self, session: Session) -> None:
         self._ensure_directory()
         target = self.path(session.id)

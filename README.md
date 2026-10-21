@@ -137,7 +137,9 @@ is what takes time.
 ## Sessions
 
 Every chat keeps a session. Without `--session`, `nusa-rg chat` starts one and
-saves every turn as it happens. When the session ends, the id and the command
+saves every turn as it happens. The file is written when the project is
+indexed and the conversation says something, so a chat that ends without a
+word leaves nothing behind. When the session ends, the id and the command
 that brings the conversation back are printed:
 
 ```text

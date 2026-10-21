@@ -117,9 +117,14 @@ def test_history_character_budget_keeps_the_newest_turn():
 
 
 # ------------------------------------------------------- automatic sessions
-def test_chat_starts_a_session_on_its_own(runner):
-    """No --session flag: the chat still keeps a session of its own."""
-    result = run(runner, ["chat", "--no-rag"], input="/exit\n")
+def test_chat_starts_a_session_on_its_own(runner, sample_project, monkeypatch):
+    """No --session flag: the chat keeps a session of its own."""
+    set_api_key(runner)
+    install_fake_api(monkeypatch)
+    indexed = run(runner, ["index", str(sample_project)])
+    assert indexed.exit_code == 0
+
+    result = run(runner, ["chat", "--no-rag"], input="hello\n/exit\n")
 
     assert result.exit_code == 0, result.output
     assert "resume with: nusa-rg chat --session" in result.output
@@ -129,9 +134,53 @@ def test_chat_starts_a_session_on_its_own(runner):
     assert stored[0].path.is_file()
 
 
-def test_chat_shows_the_session_details_when_it_ends(runner):
-    """The id and the resume command are printed once, when the session ends."""
+def test_a_chat_without_a_conversation_writes_no_session(runner, sample_project):
+    """The same index and no conversation must not add a file."""
+    indexed = run(runner, ["index", str(sample_project)])
+    assert indexed.exit_code == 0
+
     result = run(runner, ["chat", "--no-rag"], input="/exit\n")
+
+    assert result.exit_code == 0, result.output
+    assert SessionStore().list() == []
+    assert "resume with" not in result.output
+
+
+def test_a_chat_without_an_index_writes_no_session(runner, monkeypatch):
+    """No indexed project and no file, even when the chat says something."""
+    set_api_key(runner)
+    install_fake_api(monkeypatch)
+
+    result = run(runner, ["chat", "remember me", "--no-rag"])
+
+    assert result.exit_code == 0, result.output
+    assert SessionStore().list() == []
+    assert "no session was kept" in result.output
+
+
+def test_a_named_session_is_kept_without_an_index(runner, monkeypatch):
+    """A session the user named by hand is kept whatever the index says."""
+    set_api_key(runner)
+    install_fake_api(monkeypatch)
+
+    result = run(runner, ["chat", "remember me", "--no-rag",
+                          "--session", "named"])
+
+    assert result.exit_code == 0, result.output
+    saved = SessionStore().load("named")
+    assert saved.turns == 1
+    assert saved.messages[0] == {"role": "user", "content": "remember me"}
+
+
+def test_chat_shows_the_session_details_when_it_ends(runner, sample_project,
+                                                     monkeypatch):
+    """The id and the resume command are printed once, when the session ends."""
+    set_api_key(runner)
+    install_fake_api(monkeypatch)
+    indexed = run(runner, ["index", str(sample_project)])
+    assert indexed.exit_code == 0
+
+    result = run(runner, ["chat", "--no-rag"], input="hello\n/exit\n")
 
     assert result.exit_code == 0, result.output
     assert result.output.count("resume with: nusa-rg chat --session") == 1
@@ -141,9 +190,12 @@ def test_chat_shows_the_session_details_when_it_ends(runner):
     assert "ask your codebase" in result.output
 
 
-def test_one_shot_chat_is_saved_automatically(runner, monkeypatch):
+def test_one_shot_chat_is_saved_automatically(runner, sample_project,
+                                              monkeypatch):
     set_api_key(runner)
     install_fake_api(monkeypatch)
+    indexed = run(runner, ["index", str(sample_project)])
+    assert indexed.exit_code == 0
 
     result = run(runner, ["chat", "remember me", "--no-rag"])
 
@@ -156,9 +208,12 @@ def test_one_shot_chat_is_saved_automatically(runner, monkeypatch):
                                      "content": "stub answer"}
 
 
-def test_the_automatic_session_is_resumable(runner, monkeypatch):
+def test_the_automatic_session_is_resumable(runner, sample_project,
+                                            monkeypatch):
     set_api_key(runner)
     calls = install_fake_api(monkeypatch, ("answer one", "answer two"))
+    indexed = run(runner, ["index", str(sample_project)])
+    assert indexed.exit_code == 0
 
     run(runner, ["chat", "first", "--no-rag"])
     session_id = SessionStore().list()[0].id
@@ -187,7 +242,7 @@ def test_chat_one_shot_resumes_and_saves_history(runner, monkeypatch):
         {"role": "assistant", "content": "answer one"},
     ]
     assert "session work" in second.output
-    assert "resume: nusa-rg chat --session work" in second.output
+    assert "resume with: nusa-rg chat --session work" in second.output
 
     saved = SessionStore().load("work")
     assert saved.turns == 2

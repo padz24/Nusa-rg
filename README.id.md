@@ -140,8 +140,11 @@ memakan waktu adalah panggilan ke model.
 ## Sesi percakapan
 
 Setiap chat menyimpan satu sesi. Tanpa `--session`, `nusa-rg chat` memulai
-sesi sendiri dan menyimpan tiap giliran saat terjadi. Saat sesi berakhir, id
-dan perintah untuk melanjutkan percakapan itu dicetak:
+sesi sendiri dan menyimpan tiap giliran saat terjadi. Berkasnya ditulis
+ketika project-nya sudah terindeks dan percakapannya memang berisi
+pertanyaan, jadi chat yang berakhir tanpa satu kata pun tidak meninggalkan
+apa pun. Saat sesi berakhir, id dan perintah untuk melanjutkan percakapan itu
+dicetak:
 
 ```text
   session    20261021-010019-2144

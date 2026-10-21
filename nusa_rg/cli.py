@@ -219,6 +219,24 @@ def _save_session(store, session) -> bool:
         return False
 
 
+def _project_is_indexed(engine: CoreEngine) -> bool:
+    """True when the index knows a project."""
+    try:
+        return bool(engine.index.project_root)
+    except Exception:  # noqa: BLE001 - a broken index must not block the chat
+        return False
+
+
+def _session_notice(store, session) -> None:
+    """Report the session when the chat ends, but only if one was kept."""
+    if session is None:
+        return
+    if store.exists(session.id):
+        _print_session_details(session)
+    elif session.turns:
+        ui.info("no session was kept: no project is indexed")
+
+
 def _print_session_details(session, *, compact: bool = False) -> None:
     """Show the session that is being kept, and how to come back to it."""
     if session is None:
@@ -302,10 +320,11 @@ def chat(message: str | None, project: str | None, no_rag: bool,
 
     store = session_mod.SessionStore()
     session = None
+    resumed = False
     target = project or engine.config.project_path()
     if session_id:
         try:
-            session = store.open(
+            session = store.prepare(
                 session_id,
                 project=target or "",
                 style=session_style or "",
@@ -314,21 +333,19 @@ def chat(message: str | None, project: str | None, no_rag: bool,
             ui.error(str(exc))
             engine.close()
             sys.exit(2)
-
+        resumed = store.exists(session.id)
         if project and session.project != target:
             session.project = target
-            _save_session(store, session)
         if not target and session.project:
             target = session.project
         session_style = session.style or session_style
         if session_style and session.style != session_style:
             session.set_style(session_style)
-            _save_session(store, session)
     else:
-        # No id given: start a session of our own, so every chat is kept and
-        # can be picked up again later.
+        # No id given: a session of our own, kept in memory until there is
+        # something worth keeping.
         try:
-            session = store.create(project=target or "", style=session_style or "")
+            session = store.prepare(project=target or "", style=session_style or "")
         except session_mod.SessionError as exc:
             ui.error(str(exc))
             engine.close()
@@ -337,6 +354,12 @@ def chat(message: str | None, project: str | None, no_rag: bool,
     if target and do_index and not no_rag:
         _auto_index(engine, target)
 
+    # A session is only written when the project is indexed and the
+    # conversation actually says something. Otherwise the session directory
+    # fills up with empty files. A session the user named by hand is always
+    # kept, that was an explicit request.
+    keep_session = bool(session_id) or resumed or _project_is_indexed(engine)
+
     history = _session_history(engine, session)
     if message:
         turn = _single_turn(engine, message, no_rag=no_rag, stream=stream,
@@ -344,14 +367,16 @@ def chat(message: str | None, project: str | None, no_rag: bool,
                             history=history, session=session)
         if session is not None and turn is not None:
             session.add_turn(message, turn.answer)
-            _save_session(store, session)
+            if keep_session:
+                _save_session(store, session)
         # The one-shot ends here, so the session is reported now.
-        _print_session_details(session, compact=True)
+        _session_notice(store, session)
         return
 
     _interactive_loop(engine, no_rag=no_rag, stream=stream,
                       plain=plain, markdown=markdown, style=session_style,
-                      session=session, store=store, project=target or "")
+                      session=session, store=store, project=target or "",
+                      keep_session=keep_session)
 
 
 def _auto_index(engine: CoreEngine, target: str) -> None:
@@ -643,7 +668,7 @@ def _session_command(args: list[str], session, store, style: str | None,
 def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                       plain: bool = False, markdown: bool = True,
                       style: str | None = None, session=None, store=None,
-                      project: str = "") -> None:
+                      project: str = "", keep_session: bool = True) -> None:
     facts = ui.banner()
     ui.chat_hints(index_empty=not facts.index_ready and not no_rag)
     # A typed command belongs to the project that is indexed, not to the
@@ -724,7 +749,8 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
         pending_command = ""
         if session is not None and store is not None:
             session.add_turn(raw, turn.answer)
-            _save_session(store, session)
+            if keep_session:
+                _save_session(store, session)
         if turn.response.used_fallback:
             ui.info(f"answered via fallback provider: {turn.response.provider}")
         usage = turn.response.usage
@@ -733,7 +759,7 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
 
     # The session is kept, so say so while the user is still here: the id and
     # the command that brings the conversation back.
-    _print_session_details(session)
+    _session_notice(store, session)
     engine.close()
 
 
