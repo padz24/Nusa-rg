@@ -51,7 +51,10 @@ cd ~/nusa-rg && ./install.sh
 
 Skrip pemasangan memeriksa arsitektur dan versi Termux, memasang dua modul
 yang tidak punya wheel Android di PyPI (`cryptography` dan `PyYAML`),
-memasang paketnya, dan bisa membangun llama.cpp untuk jalur lokal.
+memasang paketnya, dan bisa membangun llama.cpp untuk jalur lokal. Skrip itu
+mencetak emblem, warna, dan gelombang status yang sama dengan perintah
+`nusa-rg`, jadi proses yang memakan menit menampilkan kemajuan, bukan
+keheningan. `NUSA_RG_SKIP_LLAMA=1` melewati pembangunan llama.cpp opsional.
 
 Dari repositori Termux, setelah diterbitkan:
 

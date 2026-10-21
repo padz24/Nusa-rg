@@ -51,7 +51,10 @@ cd ~/nusa-rg && ./install.sh
 
 The installer checks the architecture and the Termux version, installs the two
 modules PyPI ships no Android wheel for (`cryptography` and `PyYAML`),
-installs the package, and can build llama.cpp for the local path.
+installs the package, and can build llama.cpp for the local path. It prints the
+same emblem, colours and status wave as the `nusa-rg` command, so a build that
+takes minutes shows progress instead of silence. `NUSA_RG_SKIP_LLAMA=1`
+skips the optional llama.cpp build.
 
 From a Termux repository, once it is published:
 
