@@ -528,6 +528,7 @@ def _run_terminal_command(text: str, settings: Config, *,
                   or command_mod.DEFAULT_LIMIT),
         use_rtk=use_rtk,
         cwd=cwd,
+        compress=bool(settings.get("command_compress", True)),
     )
 
 
@@ -899,6 +900,7 @@ def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
                     settings.get("command_output_limit", command_mod.DEFAULT_LIMIT)
                     or command_mod.DEFAULT_LIMIT),
                 use_rtk=not raw and bool(settings.get("command_use_rtk", True)),
+                compress=bool(settings.get("command_compress", True)),
                 cwd=command_cwd,
             )
     except CommandError as exc:
@@ -1033,6 +1035,7 @@ def config_set(key: str | None, value: str | None, secret: bool,
       nusa-rg config set api_key --provider groq --secret    (per provider)
       nusa-rg config set fallback_providers "groq, deepseek"
       nusa-rg config set response_style caveman
+      nusa-rg config set command_compress off
       nusa-rg config set system_prompt "You are terse."
     """
     settings = Config()
@@ -1464,6 +1467,9 @@ def status() -> None:
           (" (keystore/encrypted)" if key_state == "set" else ""))
     style = str(settings.get("response_style", "default") or "default")
     print(f"  style     {style_mod.describe(style)}")
+    compress = bool(settings.get("command_compress", True))
+    engine_name = "rtk" if command_mod.rtk_usable() else "built-in"
+    print(f"  compress  {'on' if compress else 'off'} ({engine_name})")
     entries = settings.fallback_entries()
     if entries:
         chain = " -> ".join(pid + (f":{model}" if model else "") for pid, model in entries)
@@ -1548,11 +1554,15 @@ def doctor() -> None:
     check("llama.cpp binary", bool(binary), binary or "not installed (local mode unavailable)")
 
     version = command_mod.rtk_version()
-    if version is not None:
+    if version is not None and command_mod.rtk_usable():
         check("rtk", True, f"{version} - command output filtered before it reaches the model")
+    elif version is not None:
+        note("rtk", "installed but cannot run; the built-in compressor is used")
     else:
         note("rtk", "not installed - optional; install from github.com/rtk-ai/rtk "
                     "to trim command output")
+    check("built-in compressor", True,
+          "command output is shortened by nusa-rg when rtk is not used")
 
     try:
         catalogue = catalog_mod.load_catalog()

@@ -63,6 +63,7 @@ DEFAULTS: dict[str, Any] = {
     "command_timeout": 120,           # seconds a `!command` may run
     "command_output_limit": 40000,    # bytes of command output kept for context
     "command_use_rtk": True,          # route commands through rtk when installed
+    "command_compress": True,         # shorten command output with the built-in rules
     "log_level": "INFO",
 }
 
@@ -73,6 +74,11 @@ PROVIDERS = {
     "groq": "https://api.groq.com/openai/v1",
     "local": "",
 }
+
+#: Settings that hold a yes/no value. They accept the words people type.
+BOOLEAN_KEYS = frozenset({"command_use_rtk", "command_compress"})
+TRUE_VALUES = frozenset({"1", "true", "on", "yes", "enable", "enabled"})
+FALSE_VALUES = frozenset({"0", "false", "off", "no", "disable", "disabled"})
 
 
 class ConfigError(RuntimeError):
@@ -108,6 +114,16 @@ def _normalize(key: str, value: Any) -> Any:
     """Coerce user-friendly input into the stored form."""
     if key == "fallback_providers" and isinstance(value, str):
         return [part.strip() for part in value.split(",") if part.strip()]
+    if key in BOOLEAN_KEYS and isinstance(value, str):
+        text = value.strip().lower()
+        if text in TRUE_VALUES:
+            return True
+        if text in FALSE_VALUES:
+            return False
+        raise ConfigError(
+            f"'{value}' is not a yes/no value for {key}. Use one of: "
+            f"{', '.join(sorted(TRUE_VALUES | FALSE_VALUES))}."
+        )
     return value
 
 

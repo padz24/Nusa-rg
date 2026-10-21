@@ -71,12 +71,16 @@ Sessions are stored under
 .B run [options] \fICOMMAND\fR [\fIARG\fR ...]
 Run a terminal command. When
 .B rtk
-(Rust Token Killer) is on the PATH the command is sent through it as
+(Rust Token Killer) is on the PATH and can start, the command is sent
+through it as
 .IB rtk " COMMAND" ,
 and rtk rewrites the output before it reaches the model; the output is capped
-in bytes either way. The command line is never passed through a shell, and
-shell operators are rejected with an explanation. The command runs in the
-project that is indexed, unless
+in bytes either way. An rtk that is installed but cannot run is ignored, and
+the built\-in compressor shortens the output instead; switch that off with
+.BR "nusa\-rg config set command_compress off" .
+The command line is never passed through a shell, and shell operators are
+rejected with an explanation. The command runs in the project that is indexed,
+unless
 .B \-\-project
 names another one.
 .br
@@ -197,8 +201,8 @@ connectivity check.
 .B doctor
 Run installation and security self\-checks, including whether
 .B rtk
-is available and whether the provider catalogue loads. Exits non\-zero if any
-fail.
+is available and can run, and whether the provider catalogue loads. Exits
+non\-zero if any fail.
 .SH OPTIONS
 .TP
 .BR \-v ", " \-\-verbose

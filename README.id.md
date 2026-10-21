@@ -307,11 +307,28 @@ Aturannya:
   dengan skrip. Dengan `--ask`, perintah yang gagal berubah menjadi
   penjelasan, bukan stack trace yang harus Anda jelaskan sendiri.
 
-Ketika [rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) terpasang,
-`nusa-rg run` menjalankan perintah sebagai `rtk <command>` dan RTK menulis
-ulang keluarannya sebelum sampai ke model. Batas byte berlaku dengan maupun
-tanpa rtk, jadi satu perintah yang berisik tidak dapat menghabiskan jendela
-konteks. `nusa-rg doctor` memberi tahu apakah rtk terpasang.
+Ketika [rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) terpasang dan
+bisa dijalankan, `nusa-rg run` menjalankan perintah sebagai `rtk <command>`
+dan RTK menulis ulang keluarannya sebelum sampai ke model. Batas byte
+berlaku dengan maupun tanpa rtk, jadi satu perintah yang berisik tidak
+dapat menghabiskan jendela konteks. `nusa-rg doctor` memberi tahu apakah rtk
+terpasang dan apakah ia bisa jalan.
+
+rtk sering terpasang di Termux tetapi dibangun untuk platform lain, dan
+binary yang tidak bisa dijalankan akan menggagalkan perintah yang ia bungkus.
+`nusa-rg` memeriksanya lebih dulu: ketika rtk tidak ada atau tidak bisa
+jalan, perintahnya berjalan sendiri dan kompresor bawaan nusa-rg yang
+memendekkan keluarannya. Aturannya per jenis alat: pemasangan pip dipangkas
+menjadi paket-paket yang terpasang, hasil test menjadi kegagalan dan
+ringkasannya, build menjadi crate yang dikompilasi, dan yang lain menjadi
+baris yang bukan deru progres.
+
+```bash
+nusa-rg config set command_compress off   # simpan keluaran mentah
+nusa-rg config set command_compress on    # pendekkan lagi
+```
+
+`status` menampilkan mana dari keduanya yang sedang bekerja.
 
 ## Caveman
 
@@ -361,6 +378,7 @@ temperature: 0.2
 command_timeout: 120
 command_output_limit: 40000
 command_use_rtk: true
+command_compress: true         # pendekkan keluaran dengan aturan bawaan saat rtk tidak dipakai
 update_remote: ''               # kosong mempertahankan penjaga update khusus GitHub
 log_level: INFO
 system_prompt: 'You are a concise programming assistant embedded in a Termux terminal...'
@@ -508,7 +526,7 @@ dan sudah disanitasi.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 613 tes
+pytest                    # 628 tes
 python -m nusa_rg         # jalan tanpa memasang
 ```
 

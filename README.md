@@ -300,11 +300,26 @@ The rules:
   With `--ask`, a failing command turns into an explanation instead of a stack
   trace you have to describe later.
 
-When [rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) is installed,
-`nusa-rg run` executes the command as `rtk <command>` and RTK rewrites the
-output before it can reach the model. The byte cap applies with or without
-rtk, so one noisy command cannot blow up the context window. `nusa-rg doctor`
-reports whether rtk is installed.
+When [rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) is installed and
+can run, `nusa-rg run` executes the command as `rtk <command>` and RTK rewrites
+the output before it can reach the model. The byte cap applies with or without
+rtk, so one noisy command cannot blow up the context window.
+`nusa-rg doctor` reports whether rtk is installed and whether it works.
+
+rtk is often installed on Termux but built for another platform, and a binary
+that cannot start would fail the command it wraps. `nusa-rg` checks that
+first: when rtk is missing or cannot run, the command runs on its own and the
+built-in compressor shortens the output instead. The rules are per tool: a pip
+install is reduced to the packages it installed, a test run to its failures
+and its summary, a build to the crates it compiled, and anything else to the
+lines that are not progress noise.
+
+```bash
+nusa-rg config set command_compress off   # keep the raw output
+nusa-rg config set command_compress on    # shorten it again
+```
+
+`status` shows which of the two is doing the work.
 
 ## Caveman
 
@@ -353,6 +368,7 @@ temperature: 0.2
 command_timeout: 120
 command_output_limit: 40000
 command_use_rtk: true
+command_compress: true         # shorten output with the built-in rules when rtk is not used
 update_remote: ''               # empty keeps the GitHub-only update guard
 log_level: INFO
 system_prompt: 'You are a concise programming assistant embedded in a Termux terminal...'
@@ -495,7 +511,7 @@ the resulting text as labelled, sanitised context.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 613 tests
+pytest                    # 628 tests
 python -m nusa_rg         # run without installing
 ```
 

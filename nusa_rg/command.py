@@ -24,6 +24,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 
+from . import compress as compressor
 from . import sanitize
 
 RTK_BINARY = "rtk"
@@ -50,6 +51,7 @@ class CommandResult:
     duration: float
     used_rtk: bool = False
     truncated: bool = False
+    compressed: bool = False
 
     @property
     def ok(self) -> bool:
@@ -60,6 +62,8 @@ class CommandResult:
         parts = [f"exit {self.exit_code}", f"{self.duration:.1f}s"]
         if self.used_rtk:
             parts.append("output filtered by rtk")
+        elif self.compressed:
+            parts.append("output compressed")
         if self.truncated:
             parts.append("output truncated")
         return " | ".join(parts)
@@ -101,6 +105,27 @@ def rtk_version(timeout: int = 5) -> str | None:
     return text.splitlines()[0] if text else "unknown"
 
 
+def rtk_usable(timeout: int = 5) -> bool:
+    """True when the rtk binary is there and can actually start.
+
+    rtk is often installed on Termux but built for another platform, and a
+    binary that cannot start is worse than no binary at all: the command
+    would fail before it ever ran. When it does not work, the built-in
+    compressor takes its place.
+    """
+    path = rtk_path()
+    if path is None:
+        return False
+    try:
+        completed = subprocess.run(
+            [path, "--version"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
 def split_command(text: str) -> list[str]:
     """Turn a typed command line into an argv list.
 
@@ -131,12 +156,20 @@ def run(
     limit: int = DEFAULT_LIMIT,
     use_rtk: bool = True,
     cwd: str | None = None,
+    compress: bool = True,
 ) -> CommandResult:
-    """Execute ``argv``, optionally through RTK, and return its output."""
+    """Execute ``argv``, optionally through RTK, and return its output.
+
+    When rtk is missing or cannot start, the command runs on its own and the
+    built-in compressor shortens its output, so a broken rtk never stops a
+    command from working.
+    """
     if not argv:
         raise CommandError("no command given")
 
     rtk = rtk_path() if use_rtk else None
+    if rtk is not None and not rtk_usable():
+        rtk = None
     executable = [rtk, *argv] if rtk else list(argv)
     display = _display(argv)
 
@@ -162,6 +195,12 @@ def run(
         raise CommandError(f"cannot run '{argv[0]}': {exc}") from exc
 
     output, truncated = _combine(completed.stdout or "", completed.stderr or "", limit)
+    compressed = False
+    if rtk is None and compress:
+        shorter = compressor.compress(output, argv)
+        if shorter != output:
+            output = shorter
+            compressed = True
     return CommandResult(
         argv=list(argv),
         display=display,
@@ -170,6 +209,7 @@ def run(
         duration=time.monotonic() - started,
         used_rtk=rtk is not None,
         truncated=truncated,
+        compressed=compressed,
     )
 
 
