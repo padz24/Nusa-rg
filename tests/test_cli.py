@@ -387,3 +387,38 @@ def test_security_state_files_are_owner_only_after_commands(runner, sample_proje
     for path in (paths.config_path(), paths.app_log_path(), paths.index_db_path()):
         if path.exists():
             assert stat.S_IMODE(path.stat().st_mode) == 0o600, f"{path}"
+
+
+# ------------------------------------------------------------- command folder
+def test_chat_command_runs_in_the_indexed_project(runner, sample_project):
+    """`!cmd` belongs to the indexed project, not to the current directory."""
+    indexed = run(runner, ["index", str(sample_project)])
+    assert indexed.exit_code == 0
+
+    result = run(runner, ["chat", "--no-rag"], input="!ls\n/exit\n")
+
+    assert result.exit_code == 0, result.output
+    assert str(sample_project) in result.output
+    assert "README.md" in result.output
+
+
+def test_run_command_runs_in_the_indexed_project(runner, sample_project):
+    indexed = run(runner, ["index", str(sample_project)])
+    assert indexed.exit_code == 0
+
+    result = run(runner, ["run", "--raw", "ls"])
+
+    assert result.exit_code == 0, result.output
+    assert str(sample_project) in result.output
+    assert "README.md" in result.output
+
+
+def test_run_command_uses_an_explicit_project(runner, tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "marker.txt").write_text("here\n", encoding="utf-8")
+
+    result = run(runner, ["run", "--raw", "ls", "--project", str(other)])
+
+    assert result.exit_code == 0, result.output
+    assert "marker.txt" in result.output

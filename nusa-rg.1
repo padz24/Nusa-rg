@@ -38,7 +38,9 @@ with
 .B !
 runs a terminal command (through
 .B rtk
-when installed) and keeps its output as context for the next question.
+when installed) and keeps its output as context for the next question. The
+command runs in the project that is indexed, not in the directory the
+assistant was started in.
 .br
 Options:
 .BR \-p ", " \-\-project " \fIPATH\fR"
@@ -72,7 +74,10 @@ Run a terminal command. When
 .IB rtk " COMMAND" ,
 and rtk rewrites the output before it reaches the model; the output is capped
 in bytes either way. The command line is never passed through a shell, and
-shell operators are rejected with an explanation.
+shell operators are rejected with an explanation. The command runs in the
+project that is indexed, unless
+.B \-\-project
+names another one.
 .br
 Options:
 .BR \-a ", " \-\-ask " \fIQUESTION\fR"

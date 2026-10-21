@@ -7,6 +7,7 @@ plus ``status`` and ``doctor`` for diagnostics.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import click
 
@@ -468,7 +469,27 @@ def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool
         engine.close()
 
 
-def _run_terminal_command(text: str, settings: Config, *, use_rtk: bool | None = None):
+def _command_cwd(engine: CoreEngine, explicit: str = "") -> str | None:
+    """Where a typed command should run: the project that is indexed.
+
+    The indexed root comes first, because that is the code the assistant is
+    talking about; an explicitly named project wins over it, and without
+    either the command simply runs where the user is.
+    """
+    if explicit:
+        return str(Path(explicit).expanduser())
+    try:
+        root = engine.index.project_root
+    except Exception:  # noqa: BLE001 - a broken index must not block commands
+        root = ""
+    if root:
+        return str(root)
+    configured = engine.config.project_path()
+    return str(Path(configured).expanduser()) if configured else None
+
+
+def _run_terminal_command(text: str, settings: Config, *,
+                          use_rtk: bool | None = None, cwd: str | None = None):
     """Execute a ``!command`` line under the configured limits."""
     argv = command_mod.split_command(text)
     if use_rtk is None:
@@ -480,18 +501,21 @@ def _run_terminal_command(text: str, settings: Config, *, use_rtk: bool | None =
         limit=int(settings.get("command_output_limit", command_mod.DEFAULT_LIMIT)
                   or command_mod.DEFAULT_LIMIT),
         use_rtk=use_rtk,
+        cwd=cwd,
     )
 
 
-def _print_command(result) -> None:
+def _print_command(result, cwd: str | None = None) -> None:
     """Show a finished command exactly as the model will receive it."""
     ui.heading(f"$ {result.display}")
+    if cwd:
+        ui.info(f"in {cwd}")
     if result.output:
         print(result.output)
     ui.info(result.summary())
 
 
-def _capture_command(settings: Config, text: str) -> str:
+def _capture_command(settings: Config, text: str, cwd: str | None = None) -> str:
     """Run one ``!command``, print it, and return its prompt block.
 
     Returns an empty string when nothing was run, so callers can keep any
@@ -502,11 +526,11 @@ def _capture_command(settings: Config, text: str) -> str:
         return ""
     try:
         with ui.thinking("Running command"):
-            result = _run_terminal_command(text, settings)
+            result = _run_terminal_command(text, settings, cwd=cwd)
     except CommandError as exc:
         ui.error(str(exc))
         return ""
-    _print_command(result)
+    _print_command(result, cwd)
     ui.info("output kept - your next question will be answered with it")
     return result.for_prompt()
 
@@ -622,6 +646,9 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
     facts = ui.banner()
     ui.chat_hints(index_empty=not facts.index_ready and not no_rag)
     _print_session_details(session)
+    # A typed command belongs to the project that is indexed, not to the
+    # directory the assistant happens to have been started in.
+    command_cwd = _command_cwd(engine)
 
     session_style = style
     pending_command = ""
@@ -672,7 +699,8 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                 _save_session(store, session)
             continue
         if raw.startswith("!"):
-            pending_command = _capture_command(engine.config, raw[1:].strip()) \
+            pending_command = _capture_command(
+                engine.config, raw[1:].strip(), cwd=command_cwd) \
                 or pending_command
             continue
 
@@ -827,6 +855,10 @@ def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
     else:
         argv = list(command)
 
+    engine = CoreEngine(settings)
+    # The command belongs to the project that is indexed, so it runs there and
+    # not in the directory the assistant was started in.
+    command_cwd = _command_cwd(engine, project)
     try:
         with ui.thinking("Running command"):
             result = command_mod.run(
@@ -838,17 +870,19 @@ def run_cmd(command: tuple[str, ...], question: str | None, raw: bool,
                     settings.get("command_output_limit", command_mod.DEFAULT_LIMIT)
                     or command_mod.DEFAULT_LIMIT),
                 use_rtk=not raw and bool(settings.get("command_use_rtk", True)),
+                cwd=command_cwd,
             )
     except CommandError as exc:
         ui.error(str(exc))
+        engine.close()
         sys.exit(127)
 
-    _print_command(result)
+    _print_command(result, command_cwd)
 
     if not question:
+        engine.close()
         sys.exit(result.exit_code)
 
-    engine = CoreEngine(settings)
     stream = _resolve_stream(engine, stream, no_stream)
     target = project or engine.config.project_path()
     if not target and chat_session is not None:

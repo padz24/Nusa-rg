@@ -266,6 +266,7 @@ you see the output, and the next question is answered with it attached:
 ```
 ❯ !pytest -x
   $ pytest -x
+  in /home/user/projects/my-app
   ... output, filtered by rtk ...
   exit 1 | 2.4s | output filtered by rtk
 ❯ why did the second test fail?
@@ -275,6 +276,9 @@ The details:
 
 * Commands run **only when you type them** — an answer from a model can never
   trigger one.
+* They run **in the project that is indexed**, not in the directory the
+  assistant was started in: `ls` there lists the project, not your home. The
+  directory is printed above the output, and `--project` on `run` overrides it.
 * Nothing goes through a shell: `;`, `|`, `&`, backticks, `$`, `<`, `>` and
   newlines are rejected with an explanation. Run the plain command, or use a
   real terminal for pipelines.
@@ -515,7 +519,7 @@ resulting text as labelled, sanitised context.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 609 tests
+pytest                    # 612 tests
 python -m nusa_rg       # run without installing
 ```
 
