@@ -186,7 +186,19 @@ def test_providers_list_draws_the_logo(runner, monkeypatch):
     assert result.exit_code == 0
     assert "groq" in result.output
     assert any(character in result.output for character in "⠿⣿⠟⠛")
-    assert "models.dev/logos/groq.svg" in result.output
+    assert "GROQ_API_KEY" in result.output
+    # The address of the logo is never printed.
+    assert "models.dev/logos" not in result.output
+
+
+def test_providers_list_separates_the_entries(runner, monkeypatch):
+    monkeypatch.delenv(logos.DISABLE_ENV, raising=False)
+    monkeypatch.setattr(logos, "svg_text", lambda name, timeout=15: SQUARE)
+
+    result = run(runner, ["providers", "list", "--search", "g", "--limit", "3"])
+
+    assert result.exit_code == 0
+    assert "\n\n" in result.output, "entries must not run into each other"
 
 
 def test_providers_list_falls_back_to_one_line_without_logos(runner, monkeypatch):
@@ -196,7 +208,8 @@ def test_providers_list_falls_back_to_one_line_without_logos(runner, monkeypatch
     result = run(runner, ["providers", "list", "--search", "groq"])
 
     assert result.exit_code == 0
-    assert "groq.svg" in result.output
+    assert "groq" in result.output
+    assert "models.dev/logos" not in result.output
     assert not any(character in result.output for character in "⠿⣿⠟⠛")
 
 
@@ -214,7 +227,7 @@ def test_providers_list_no_icons_skips_the_download(runner, monkeypatch):
 
     assert result.exit_code == 0
     assert calls == []
-    assert "groq.svg" in result.output
+    assert "groq" in result.output
 
 
 def test_providers_show_draws_the_logo(runner, monkeypatch):
@@ -224,19 +237,19 @@ def test_providers_show_draws_the_logo(runner, monkeypatch):
     result = run(runner, ["providers", "show", "groq"])
 
     assert result.exit_code == 0
-    assert "https://models.dev/logos/groq.svg" in result.output
     assert any(character in result.output for character in "⠿⣿⠟⠛")
+    assert "models.dev/logos" not in result.output
 
 
-def test_providers_icon_prints_the_drawing_and_the_address(runner, monkeypatch):
+def test_providers_icon_prints_only_the_drawing(runner, monkeypatch):
     monkeypatch.delenv(logos.DISABLE_ENV, raising=False)
     monkeypatch.setattr(logos, "svg_text", lambda name, timeout=15: SQUARE)
 
     result = run(runner, ["providers", "icon", "groq"])
 
     assert result.exit_code == 0
-    assert "https://models.dev/logos/groq.svg" in result.output
     assert any(character in result.output for character in "⠿⣿⠟⠛")
+    assert "models.dev/logos" not in result.output
 
 
 def test_providers_icon_unknown_provider(runner):

@@ -151,22 +151,25 @@ draws each one next to its provider — a terminal cannot show SVG, so the file
 is rasterised into Braille cells.
 
 Every entry carries its own colour, picked from a palette by the provider id,
-so the list can be scanned by eye:
+and the entries are separated by a blank line so they never run together:
 
 ```text
   ⢀⣴⣾⣿⣿⣶⣄⠀  [ok] 302ai
   ⣾⣿⣿⣿⣿⣿⣿⣧  302.AI
   ⢻⣿⣿⣿⣿⣿⣿⡿  122 models
-  ⠀⠙⠿⣿⣿⡿⠟⠁  models.dev/logos/302ai.svg
+  ⠀⠙⠿⣿⣿⡿⠟⠁  key 302AI_API_KEY
+
   ⠀⢀⠀⡄⢠⠀⡀⠀  [ok] abacus
   ⠀⠸⠀⠆⢸⠀⣃⠀  Abacus
+  ⠀⢙⠀⡇⠰⠀⡅⠀  103 models
+  ⠀⠈⠀⠃⠘⠀⠁⠀  key ABACUS_API_KEY
 ```
 
 ```bash
 nusa-rg providers list          # every provider, in its own colour
 nusa-rg providers list --limit 40
 nusa-rg providers show deepseek # the logo of one provider
-nusa-rg providers icon deepseek # just the logo, plus its address
+nusa-rg providers icon deepseek # just the logo
 ```
 
 `providers list --no-icons` (or `NUSA_RG_NO_LOGOS=1`) keeps the compact

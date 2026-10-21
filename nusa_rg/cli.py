@@ -1084,19 +1084,6 @@ def _load_catalog() -> "catalog_mod.Catalog":
         sys.exit(1)
 
 
-def _provider_icon(provider_id: str) -> str:
-    """Logo URL of a catalogue provider, empty when the id is unknown."""
-    if not provider_id:
-        return ""
-    try:
-        entry = catalog_mod.load_catalog().get(provider_id)
-    except catalog_mod.CatalogError:
-        return ""
-    if entry is None:
-        return ""
-    return ui.link(entry.logo_url, entry.logo_url)
-
-
 @main.group()
 def providers() -> None:
     """Browse the bundled catalogue of 200+ providers and their models."""
@@ -1116,7 +1103,7 @@ def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> N
     ready = sum(1 for entry in catalogue.providers.values() if entry.selectable)
     ui.heading(f"Providers ({total} listed, {ready} ready to use)")
     ui.info(f"snapshot: {catalogue.fetched_at or 'bundled'} | "
-            f"{models} models in total | icons: models.dev/logos/<id>.svg")
+            f"{models} models in total | logos: drawn from the registry")
     found = catalogue.search(search, compatible_only=not show_all)
     rows = found[:limit]
 
@@ -1126,11 +1113,15 @@ def providers_list(search: str, show_all: bool, limit: int, no_icons: bool) -> N
                  for entry in rows]
         icon_width = max((ui.visible_width(left) for _, card in cards
                           for left, _ in card), default=8)
-        for entry, card in cards:
+        for index, (entry, card) in enumerate(cards):
             _print_provider_card(entry, card, icon_width)
+            if index < len(cards) - 1:
+                print()
     else:
-        for entry in rows:
+        for index, entry in enumerate(rows):
             _print_provider_row(entry)
+            if index < len(rows) - 1:
+                print()
 
     if len(found) > limit:
         ui.info(f"... {len(found) - limit} more; raise --limit or narrow --search")
@@ -1142,9 +1133,8 @@ def _print_provider_row(entry) -> None:
     """One provider on a single line, in its own colour."""
     accent = ui.provider_accent(entry.id)
     mark = ui.paint("ok", ui.GREEN) if entry.selectable else ui.paint("--", ui.GREY)
-    icon = ui.link(ui.paint(f"{entry.id}.svg", ui.DIM), entry.logo_url)
     print(f"  [{mark}] {ui.paint(f'{entry.id:<28}', accent, ui.BOLD)}"
-          f"{entry.name[:30]:<32}{entry.model_count:>5} models  {icon}")
+          f"{entry.name[:30]:<32}{entry.model_count:>5} models")
 
 
 def _pad(text: str, width: int) -> str:
@@ -1160,8 +1150,7 @@ def _provider_card_rows(entry, drawing: list[str]) -> list[tuple[str, str]]:
         f"[{mark}] {ui.paint(entry.id, accent, ui.BOLD)}",
         entry.name,
         f"{entry.model_count} models",
-        ui.link(ui.paint(entry.logo_url.replace("https://", ""), accent),
-                entry.logo_url),
+        f"key {', '.join(entry.env) or '(none listed)'}",
     ]
 
     rows: list[tuple[str, str]] = []
@@ -1199,7 +1188,6 @@ def providers_show(provider_id: str) -> None:
     for line in drawing:
         print("  " + ui.paint(line, accent))
     print(f"  id          {provider.id}")
-    print(f"  icon        {ui.link(provider.logo_url, provider.logo_url)}")
     print(f"  endpoint    {provider.api or '(not published - set api_base_url)'}")
     print(f"  key         {', '.join(provider.env) or '(none listed)'}")
     print(f"  models      {provider.model_count}")
@@ -1255,12 +1243,11 @@ def providers_icon(provider_id: str) -> None:
         sys.exit(1)
     drawing = logos_mod.icon(provider.id)
     accent = ui.provider_accent(provider.id)
-    if drawing:
-        for line in drawing:
-            print("  " + ui.paint(line, accent))
-    else:
+    if not drawing:
         ui.warn("the logo of this provider could not be drawn")
-    print(f"  {ui.link(provider.logo_url, provider.logo_url)}")
+        return
+    for line in drawing:
+        print("  " + ui.paint(line, accent))
 
 
 @providers.command("refresh")
@@ -1385,9 +1372,6 @@ def status() -> None:
     provider_id = str(settings.get("api_provider") or "")
     provider = settings.get("model_provider")
     print(f"  provider  {provider}" + (f" ({provider_id})" if provider_id else ""))
-    icon = _provider_icon(provider_id)
-    if icon:
-        print(f"  icon      {icon}")
     print(f"  model     {settings.get('api_model')}")
     print(f"  base url  {settings.provider_base_url()}")
     key_state = "set" if settings.api_key_for(provider_id) else "not set"

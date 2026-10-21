@@ -141,7 +141,8 @@ Print the resolved path of every state file.
 .B providers list [\fB\-\-search\fR \fITEXT\fR] [\fB\-\-all\fR] [\fB\-\-limit\fR \fIN\fR] [\fB\-\-no\-icons\fR]
 List the bundled catalogue of 200+ providers with their model counts and the
 logo of each one, drawn next to the details. Every entry gets its own colour,
-taken from the provider id, so the list can be told apart at a glance. Only
+taken from the provider id, and the entries are separated by a blank line, so
+the list can be told apart at a glance. Only
 OpenAI chat\-completions compatible providers are shown unless
 .B \-\-all
 is given; the others are listed for their key names and documentation but
@@ -154,9 +155,7 @@ Print one provider's endpoint, key environment variable, model count, and
 default model, plus the command that switches to it.
 .TQ
 .B providers icon \fIPROVIDER\fR
-Draw the logo of one provider and print its address. The registry serves one
-SVG per provider id at
-.IR https://models.dev/logos/ {PROVIDER} .svg ;
+Draw the logo of one provider. The registry serves one SVG per provider id;
 a terminal cannot show SVG, so the file is rasterised into Braille cells.
 .TQ
 .B providers models \fIPROVIDER\fR [\fB\-\-search\fR \fITEXT\fR] [\fB\-\-limit\fR \fIN\fR]
