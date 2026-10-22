@@ -11,6 +11,7 @@ session when a working alternative is configured.
 
 from __future__ import annotations
 
+from typing import Callable
 from urllib.parse import urlparse
 
 from .. import catalog
@@ -22,11 +23,13 @@ from .failover import FailoverClient
 from .local import LocalLLMRunner
 
 
-def build_client(config: Config) -> LLMClient:
+def build_client(config: Config, *,
+                gate: Callable[[str, str], str | None] | None = None) -> LLMClient:
     """Return the client matching the configuration, with any fallbacks.
 
     Raises :class:`LLMError` subclasses with actionable messages so the CLI can
-    print them verbatim (AC-10).
+    print them verbatim (AC-10). ``gate`` is the privacy check that runs
+    before every provider, the fallbacks included.
     """
     provider = str(config.get("model_provider", "external")).lower()
     primary_key, primary = _build_primary(config, provider)
@@ -41,7 +44,7 @@ def build_client(config: Config) -> LLMClient:
 
     if len(chain) == 1:
         return primary
-    return FailoverClient(chain)
+    return FailoverClient(chain, gate=gate)
 
 
 def _build_primary(config: Config, provider: str) -> tuple[str, LLMClient]:

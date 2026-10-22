@@ -64,6 +64,11 @@ DEFAULTS: dict[str, Any] = {
     "command_output_limit": 40000,    # bytes of command output kept for context
     "command_use_rtk": True,          # route commands through rtk when installed
     "command_compress": True,         # shorten command output with the built-in rules
+    "privacy_secret_detection": True,  # look for credentials before anything is sent
+    "privacy_redact_secrets": True,    # replace a credential with a mask
+    "privacy_local_only": [],          # glob patterns that never leave the device
+    "privacy_confirm_sensitive_context": True,  # ask before a redacted context is sent
+    "patch_test_command": "",         # command `nusa-rg patch test` runs on a staged patch
     "log_level": "INFO",
 }
 

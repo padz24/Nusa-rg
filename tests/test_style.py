@@ -78,7 +78,7 @@ class _StubClient:
 @pytest.fixture
 def captured_engine(monkeypatch):
     stub = _StubClient()
-    monkeypatch.setattr("nusa_rg.llm.build_client", lambda cfg: stub)
+    monkeypatch.setattr("nusa_rg.llm.build_client", lambda cfg, **kwargs: stub)
     engine = CoreEngine()
     engine.ask("warm up", skip_retrieval=True)
     return stub, engine

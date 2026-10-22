@@ -51,7 +51,7 @@ class WholeClient(LLMClient):
 @pytest.fixture
 def stub_client(monkeypatch):
     def install(client):
-        monkeypatch.setattr("nusa_rg.engine.llm.build_client", lambda config: client)
+        monkeypatch.setattr("nusa_rg.engine.llm.build_client", lambda config, **kwargs: client)
         return client
 
     return install

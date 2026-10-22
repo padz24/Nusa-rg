@@ -184,6 +184,46 @@ Persyaratan fungsional berikut mendefinisikan perilaku sistem yang harus diimple
     *   `nusa-rg update` hanya menarik dari repositori resmi; checkout yang menunjuk URL lama tetap diterima, dan remote tanpa tag rilis dibandingkan lewat commit branch.
     *   **AC-54:** Checkout yang `origin`-nya bukan repositori resmi ditolak dengan pesan yang menyebut remote yang terdeteksi.
 
+**12. Bukti, Peta Kode, Privasi, Patch, dan Memori**
+
+Kelima fitur berikut saling memakai: peta kode memberi bukti, bukti dibaca
+dinding privasi, dan memori kegagalan memberi konteks ketika sebuah patch
+sedang disiapkan.
+
+*   **FR-27: Jawaban Berbasis Bukti**
+    *   Setiap giliran membawa blok bukti berisi cuplikan yang benar-benar diambil, label `path:line`, skor peringkat, dan nama simbol yang terkait.
+    *   Model diminta melabeli setiap klaim dengan `[FACT]`, `[INFERENCE]`, atau `[UNKNOWN]`; ketika indeks tidak menyimpan apa pun tentang pertanyaannya, blok bukti menyatakan hal itu secara terbuka.
+    *   **AC-62:** Prompt yang dikirim memuat blok bukti dengan label dan rujukan baris; jawaban yang tidak didukung bukti ditandai `[UNKNOWN]`.
+    *   **AC-63:** When the retrieval holds nothing, the prompt says so and the answer is expected to be `[UNKNOWN]`.
+*   **FR-28: Peta Kode**
+    *   Berkas Python dibaca dengan `ast` tanpa mengeksekusi kode proyek, lalu definisi dan rujukan disimpan di sebelah potongan dalam basis data yang sama.
+    *   `nusa-rg map`, `nusa-rg map --symbol <nama>`, dan `nusa-rg impact <berkas>` melaporkan struktur proyek, letak sebuah simbol, serta berkas dan berkas tes yang merujuknya.
+    *   Simbol diganti per berkas dalam transaksi yang sama dengan potongan berkas itu, sehingga simbol tidak pernah lebih lama daripada kodenya.
+    *   **AC-64:** `nusa-rg map --symbol <nama>` menampilkan definisi dan berkas yang merujuk simbol tersebut dengan nomor baris sebagai bukti.
+    *   **AC-65:** `nusa-rg impact <berkas>` menyebut berkas yang merujuk simbol-simbol berkas itu dan menandai berkas tes di antaranya.
+    *   **AC-66:** Pengindeksan ulang berkas yang sama tidak menggandakan simbolnya, dan berkas yang dihapus tidak meninggalkan simbol.
+*   **FR-29: Dinding Privasi**
+    *   Sebelum permintaan dikirim, konteks diperiksa: berkas yang cocok dengan `privacy_local_only` dibuang untuk provider eksternal, kredensial disamarkan dengan `***MASKED***`, dan permintaan ditolak bila penyamaran dimatikan.
+    *   Pemeriksaan berjalan sebelum setiap provider, termasuk rantai fallback, dan konteks yang ditolak tidak pernah meninggalkan perangkat.
+    *   Dengan `privacy_confirm_sensitive_context` aktif, sesi interaktif menanyakan lebih dulu sebelum konteks yang memuat rahasia dikirim.
+    *   **AC-67:** Kredensial pada konteks tidak pernah sampai ke provider dalam bentuk aslinya.
+    *   **AC-68:** Berkas yang cocok dengan `privacy_local_only` tidak pernah masuk ke prompt saat provider eksternal dipakai, dan tetap masuk saat model lokal yang dipakai.
+    *   **AC-69:** Dinding privasi menolak seluruh giliran ketika konteks memuat rahasia dan penyamaran dimatikan.
+*   **FR-30: Ghost Patch**
+    *   `nusa-rg fix "<permintaan>"` meminta unified diff ke model lalu ereanya di `~/.nusa-rg/patches`; proyek aslinya tidak disentuh.
+    *   `nusa-rg patch review|test|apply|discard` membaca, menguji, menerapkan, atau membuang patch tersebut, dan penerapan butuh persetujuan eksplisit.
+    *   Setiap path di dalam diff harus relatif dan tetap di dalam proyek, tidak boleh menembus symlink, dan potongannya harus cocok dengan berkas yang diklaimnya.
+    *   **AC-70:** Diff dengan path absolut atau `..` ditolak sebelum berkas apa pun ditulis.
+    *   **AC-71:** Patch yang sudah tidak cocok dengan berkas aslinya ditolak saat diterapkan, bukan menulis sesuatu yang setengah benar.
+    *   **AC-72:** `nusa-rg patch test` menjalankan perintah uji yang dikonfigurasi pada salinan proyek dan melaporkan lulus, gagal, tidak dijalankan, atau tidak bisa dijalankan.
+*   **FR-31: Memori Kegagalan**
+    *   Perintah yang gagal atau provider yang error dicatat sebagai catatan kegagalan lintas sesi, dengan sidik jari error yang sudah dinormalkan, empat status percobaan, dan identitas proyek yang bukan path absolut.
+    *   Catatan yang cocok dikirim kembali ke prompt dengan label "pengalaman historis", terisolasi per proyek, dan tidak memuat rahasia.
+    *   `nusa-rg memory list|search|show|delete|purge` mengelola catatan tersebut.
+    *   **AC-73:** Kegagalan yang sama dicatat sekali dengan jumlah percobaan yang bertambah, dan catatan itu muncul lagi pada pertanyaan yang serupa.
+    *   **AC-74:** Catatan satu proyek tidak terlihat di proyek lain, dan path absolut tidak pernah disimpan di dalam catatan.
+    *   **AC-75:** `nusa-rg memory delete <id>` dan `nusa-rg memory purge` menghapus catatan yang diminta, dan purge tidak menyentuh proyek lain.
+
 ## Persyaratan Non‑Fungsional, Keamanan, dan Pembaruan
 
 Bagian ini menetapkan standar kualitas, batasan teknis, dan protokol keamanan untuk memastikan NUSA-RG berjalan stabil dan aman di lingkungan Android.
@@ -255,6 +295,8 @@ Sistem menggunakan kombinasi penyimpanan berbasis file dan database relasional r
 | **Kredensial** | Encrypted | `~/.nusa-rg/keystore.bin` | Menyimpan API Key terenkripsi AES-256-GCM; `config.yaml` hanya berisi referensi `keystore://`. |
 | **Kunci Master** | File | `~/.nusa-rg/master.key` | Kunci acak per instalasi, mode 600, menurunkan kunci keystore lewat scrypt. |
 | **Sesi Percakapan** | JSON | `~/.nusa-rg/sessions/<id>.json` | Menyimpan giliran user dan assisten beserta gaya jawaban, mode 600. |
+| **Peta Kode dan Memori** | SQLite | `~/.nusa-rg/index.db` | Tabel `symbols` dan `symbol_refs` untuk definisi dan rujukan, tabel `memory_notes` dan `memory_attempts` untuk catatan kegagalan. |
+| **Patch Pending** | Diff + salinan | `~/.nusa-rg/patches/<proyek>/<id>/` | Diff yang dihasilkan model beserta salinan proyek untuk ditinjau dan diuji, mode 700. |
 | **Logo Provider** | SVG | `~/.nusa-rg/logos/<id>.svg` | Salinan logo dari models.dev yang digambar di terminal, mode 600. |
 | **Katalog Provider** | JSON | `~/.nusa-rg/catalog.json` | Cuplikan katalog hasil `providers refresh`, menggantikan cuplikan bawaan. |
 | **Application Log** | Text | `~/.nusa-rg/logs/app.log` | Menyimpan jejak eksekusi dengan izin akses 600 dan mekanisme rotasi setiap 10 MB [ASUMSI]. |
@@ -271,6 +313,10 @@ Untuk menjaga modularitas, komunikasi antar modul dilakukan melalui kontrak API 
 | `Catalogue.search()` | `{ text: string, compatible_only: boolean }` | `{ providers: [Provider] }` | Mencari provider pada katalog lokal. |
 | `Session.load()` / `Session.save()` | `{ id: string, turns: [turn] }` | `{ session: Session }` | Memuat dan menyimpan percakapan per id. |
 | `Command.run()` | `{ argv: [string], cwd: string }` | `{ output: string, exit_code: int }` | Menjalankan perintah yang diketik pengguna, lewat rtk atau kompresor bawaan. |
+| `Symbols.impact()` | `{ target: string }` | `{ symbols: [symbol], affected: [file], tests: [file] }` | Menentukan berkas dan simbol yang dirujuk sebuah berkas atau simbol. |
+| `Privacy.screen()` | `{ text: string, path: string, external: boolean }` | `{ ok: boolean, text: string, matches: [match] }` | Memeriksa konteks sebelum dikirim; menolak bila tidak boleh keluar. |
+| `Patch.parse_diff()` | `{ diff: string }` | `{ files: [FilePatch] }` | Membaca dan memvalidasi unified diff dari model. |
+| `Memory.for_prompt()` | `{ project: string, text: string }` | `{ notes: [MemoryNote] }` | Mencari catatan kegagalan yang relevan untuk pertanyaan ini. |
 
 **3. Integrasi API Eksternal**
 
@@ -363,6 +409,15 @@ Kriteria ini menjadi standar absolut untuk menentukan apakah fitur telah selesai
 
 *   **AC-61: Kesiapan Rilis**
     *   Seluruh suite pengujian lulus tanpa akses jaringan maupun API key, dan skrip pemasang dipakai pada perangkat Termux ARM64.
+
+*   **AC-76: Bukti yang Bisa Diperiksa**
+    *   Setiap jawaban yang menyertakan klaim tentang kode dapat ditelusuri ke blok bukti yang memuat cuplikan, label, dan nomor baris yang sama.
+
+*   **AC-77: Dinding Privasi Berlaku Untuk Fallback**
+    *   Provider cadangan tidak pernah menerima konteks yang ditolak dinding privasi pada provider utama.
+
+*   **AC-78: Patch Tidak Menerapkan Langsung**
+    *   `nusa-rg fix` tidak mengubah berkas proyek; hanya `nusa-rg patch apply` yang menulis, dan hanya setelah persetujuan.
 
 ## Jadwal & Milestone
 

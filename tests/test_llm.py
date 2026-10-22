@@ -635,7 +635,7 @@ def test_engine_ask_does_not_touch_rag_when_llm_swapped(monkeypatch, sample_proj
     calls = []
     monkeypatch.setattr(
         "nusa_rg.llm.build_client",
-        lambda cfg: type("Stub", (), {
+        lambda cfg, **kwargs: type("Stub", (), {
             "name": "stub",
             "generate": lambda self, p, **kw: calls.append(p) or type(
                 "R", (), {"text": "stubbed", "usage": type("U", (), {

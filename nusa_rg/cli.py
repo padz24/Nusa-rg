@@ -7,6 +7,7 @@ plus ``status`` and ``doctor`` for diagnostics.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -15,16 +16,21 @@ from . import __version__, crypto, paths, render, ui
 from . import catalog as catalog_mod
 from . import command as command_mod
 from . import live as live_mod
+from . import llm
 from . import logos as logos_mod
+from . import memory as memory_mod
+from . import patch as patch_mod
+from . import privacy as privacy_mod
 from . import session as session_mod
 from . import style as style_mod
+from . import symbols as symbols_mod
 from . import update as update_mod
 from .command import CommandError
 from .config import Config, ConfigError, PROVIDERS
 from .engine import CoreEngine
 from .llm.base import LLMError
 from .logging_setup import audit, configure, log_event
-from .rag import ProjectIndex
+from .rag import ProjectIndex, retrieve
 
 CONTEXT_SETTINGS = {
     "help_option_names": ["-h", "--help"],
@@ -449,6 +455,7 @@ def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
         options["command_output"] = command_output
     if history:
         options["history"] = history
+    options["confirm"] = _confirm_sensitive_context
 
     if stream and live_mod.supports_live(engine):
         live = live_mod.LiveTurn(show_retrieval=_print_retrieval, emit=_emit,
@@ -463,6 +470,7 @@ def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
         if live.finish(turn.answer):
             if not live.retrieval_shown:
                 _print_retrieval(turn.retrieval)  # engine never called on_retrieval: late, not lost
+            _print_privacy_notes(turn)
             return turn
         # Nothing arrived token by token (a one-shot reply): print it the classic way.
         retrieval_shown = live.retrieval_shown
@@ -476,7 +484,40 @@ def _run_turn(engine: CoreEngine, message: str, *, stream: bool, no_rag: bool,
     if gap:
         print()
     _emit(turn.answer, plain=plain, markdown=markdown, lead=lead)
+    _print_privacy_notes(turn)
     return turn
+
+
+def _print_privacy_notes(turn) -> None:
+    """Tell the user what the firewall did with the context."""
+    for note in getattr(turn, "privacy_notes", []) or []:
+        ui.info(note)
+
+
+def _confirm_sensitive_context(matches) -> bool:
+    """Ask before a context that held a secret is sent on."""
+    ui.warn("the context holds something that looks like a secret")
+    for match in list(matches)[:3]:
+        print(f"  {match.kind} on line {match.line}")
+    if not sys.stdin.isatty():
+        return True
+    return click.confirm("send the masked context anyway?", default=False)
+
+
+def _record_failure(engine: CoreEngine, summary: str, detail: str = "",
+                     subject: str = "") -> None:
+    """Write a failure down so the next turn can learn from it."""
+    try:
+        root = engine.index.project_root
+        if not root:
+            return
+        key = memory_mod.project_key(root)
+        note = memory_mod.record(
+            engine.index.conn, key, summary, detail, subject=subject,
+            policy=privacy_mod.PrivacyPolicy.from_config(engine.config))
+        log_event("memory.record", note=note.id, status=note.status)
+    except Exception:  # noqa: BLE001 - memory must never break a turn
+        pass
 
 
 def _single_turn(engine: CoreEngine, message: str, *, no_rag: bool, stream: bool,
@@ -542,11 +583,13 @@ def _print_command(result, cwd: str | None = None) -> None:
     ui.info(result.summary())
 
 
-def _capture_command(settings: Config, text: str, cwd: str | None = None) -> str:
+def _capture_command(settings: Config, text: str, cwd: str | None = None,
+                     engine: CoreEngine | None = None) -> str:
     """Run one ``!command``, print it, and return its prompt block.
 
     Returns an empty string when nothing was run, so callers can keep any
-    previously captured output.
+    previously captured output. A command that failed is written to the
+    failure memory, and one that finally works closes its notes.
     """
     if not text:
         ui.info("usage: !<command>   e.g. !git status")
@@ -555,11 +598,36 @@ def _capture_command(settings: Config, text: str, cwd: str | None = None) -> str
         with ui.thinking("Running command"):
             result = _run_terminal_command(text, settings, cwd=cwd)
     except CommandError as exc:
+        if engine is not None:
+            _record_failure(engine, f"the command failed: {exc}",
+                            subject=text.strip())
         ui.error(str(exc))
         return ""
     _print_command(result, cwd)
+    if engine is not None:
+        if result.ok:
+            _resolve_failure(engine, text.strip())
+        else:
+            _record_failure(
+                engine,
+                f"`{text.strip()}` exited with {result.exit_code}",
+                detail=result.output[:2000], subject=text.strip())
     ui.info("output kept - your next question will be answered with it")
     return result.for_prompt()
+
+
+def _resolve_failure(engine: CoreEngine, subject: str) -> None:
+    """Close the notes of a command that now works."""
+    try:
+        root = engine.index.project_root
+        if not root:
+            return
+        key = memory_mod.project_key(root)
+        closed = memory_mod.resolve_subject(engine.index.conn, key, subject)
+        if closed:
+            log_event("memory.resolved", subject=subject, notes=closed)
+    except Exception:  # noqa: BLE001 - memory must never break a turn
+        pass
 
 
 def _toggle_style(settings: Config, command: str, current: str | None) -> str:
@@ -726,7 +794,8 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
             continue
         if raw.startswith("!"):
             pending_command = _capture_command(
-                engine.config, raw[1:].strip(), cwd=command_cwd) \
+                engine.config, raw[1:].strip(), cwd=command_cwd,
+                engine=engine) \
                 or pending_command
             continue
 
@@ -740,6 +809,7 @@ def _interactive_loop(engine: CoreEngine, *, no_rag: bool, stream: bool,
                              history=_session_history(engine, session),
                              lead=ui.assistant_prompt())
         except LLMError as exc:
+            _record_failure(engine, f"the provider failed: {exc}")
             ui.error(str(exc))
             continue
         except KeyboardInterrupt:
@@ -1355,6 +1425,393 @@ def providers_refresh(url: str, timeout: int) -> None:
     print(f"  stored in {paths.catalog_path()}")
 
 
+# --------------------------------------------------------------- code genome
+@main.command("map")
+@click.option("--symbol", default="",
+              help="Find one symbol and everything that refers to it.")
+def project_map(symbol: str) -> None:
+    """Show the structure of the indexed project."""
+    with ProjectIndex() as index:
+        root = index.project_root
+        if not root:
+            ui.error("no project is indexed. Run: nusa-rg index <path>")
+            sys.exit(1)
+        if symbol:
+            _print_symbol(index.conn, symbol)
+            return
+        info = symbols_mod.summary(index.conn)
+    ui.heading("Project map")
+    print(f"  root      {root}")
+    print(f"  files     {info['files']}")
+    print(f"  symbols   {info['symbols']}")
+    for kind, total in sorted(info["kinds"].items()):
+        print(f"  {kind:<10} {total}")
+    if info["top_files"]:
+        ui.heading("Files with the most symbols")
+        for row in info["top_files"]:
+            print(f"  {row['total']:>4}  {row['relpath']}")
+
+
+def _print_symbol(conn, name: str) -> None:
+    """One symbol: where it is defined and who refers to it."""
+    found = symbols_mod.definitions(conn, name)
+    if not found:
+        ui.error(f"no symbol named '{name}' in the index")
+        sys.exit(1)
+    ui.heading(f"Symbol {name}")
+    for row in found:
+        print(f"  {row['kind']:<9} {row['qualname']}  "
+              f"{row['relpath']}:{row['start_line']}-{row['end_line']}")
+        if row["signature"]:
+            print(f"            {row['signature']}")
+    used = symbols_mod.references(conn, name)
+    if used:
+        ui.heading("Referenced by")
+        for row in used[:20]:
+            print(f"  {row['relpath']}:{row['line']}")
+        if len(used) > 20:
+            ui.info(f"... {len(used) - 20} more references")
+
+
+@main.command("impact")
+@click.argument("target")
+def impact_cmd(target: str) -> None:
+    """Show what a change to a file or a symbol could touch."""
+    with ProjectIndex() as index:
+        if not index.project_root:
+            ui.error("no project is indexed. Run: nusa-rg index <path>")
+            sys.exit(1)
+        result = symbols_mod.impact(index.conn, target)
+    if not result["symbols"]:
+        ui.error(f"nothing known about '{target}'")
+        sys.exit(1)
+    ui.heading(f"Impact of {target}")
+    for symbol in result["symbols"]:
+        print(f"  {symbol['kind']:<9} {symbol['qualname']}  "
+              f"{symbol['relpath']}:{symbol['start_line']}")
+    if result["affected"]:
+        ui.heading("Referenced by")
+        for entry in result["affected"]:
+            print(f"  {entry['relpath']}  ({entry['symbols']})")
+    if result["tests"]:
+        ui.heading("Tests")
+        for entry in result["tests"]:
+            print(f"  {entry['relpath']}  ({entry['symbols']})")
+    if not result["affected"]:
+        ui.info("nothing else in the index refers to it")
+
+
+# ------------------------------------------------------------------- memory
+@main.group()
+def memory() -> None:
+    """Manage the notes of what failed before."""
+
+
+def _memory_key(index: ProjectIndex) -> str:
+    return memory_mod.project_key(index.project_root)
+
+
+@memory.command("list")
+@click.option("--status", default="", help="Only notes with this status.")
+def memory_list(status: str) -> None:
+    """List the failure notes of the current project."""
+    with ProjectIndex() as index:
+        notes = memory_mod.list_notes(index.conn, _memory_key(index), status)
+    if not notes:
+        ui.info("no failure notes for this project")
+        return
+    ui.heading(f"Failure notes ({len(notes)})")
+    for note in notes:
+        print(f"  {note.id}  {note.summary_line()}")
+
+
+@memory.command("search")
+@click.argument("text")
+def memory_search(text: str) -> None:
+    """Find notes by their text or by the fingerprint of the error."""
+    with ProjectIndex() as index:
+        notes = memory_mod.search(index.conn, _memory_key(index), text)
+    if not notes:
+        ui.info("no note matches")
+        return
+    ui.heading(f"Notes matching '{text}' ({len(notes)})")
+    for note in notes:
+        print(f"  {note.id}  {note.summary_line()}")
+
+
+@memory.command("show")
+@click.argument("note_id")
+def memory_show(note_id: str) -> None:
+    """Show one note and the attempts it has collected."""
+    with ProjectIndex() as index:
+        note = memory_mod.get(index.conn, note_id)
+        history = memory_mod.attempts(index.conn, note_id) if note else []
+    if note is None:
+        ui.error(f"no note with the id '{note_id}'")
+        sys.exit(1)
+    ui.heading(f"Note {note.id}")
+    print(f"  status      {note.status}")
+    print(f"  project     {note.project}")
+    print(f"  fingerprint {note.fingerprint}")
+    print(f"  created     {time.strftime('%Y-%m-%d %H:%M', time.localtime(note.created_at))}")
+    print(f"  summary     {note.summary}")
+    if note.detail:
+        print("  detail")
+    for line in (note.detail or "").splitlines():
+        print(f"    {line}")
+    if history:
+        ui.heading("Attempts")
+        for row in history:
+            print(f"  {row['attempt']}. {row['status']}  "
+                  f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(row['at']))}")
+
+
+@memory.command("delete")
+@click.argument("note_id")
+@click.option("--yes", is_flag=True, help="Do not ask for confirmation.")
+def memory_delete(note_id: str, yes: bool) -> None:
+    """Delete one failure note."""
+    with ProjectIndex() as index:
+        note = memory_mod.get(index.conn, note_id)
+        if note is None:
+            ui.error(f"no note with the id '{note_id}'")
+            sys.exit(1)
+        if not yes and not click.confirm(f"delete the note {note_id}?", default=False):
+            ui.info("cancelled")
+            return
+        memory_mod.delete(index.conn, note_id)
+    ui.success(f"deleted note {note_id}")
+
+
+@memory.command("purge")
+@click.option("--yes", is_flag=True, help="Do not ask for confirmation.")
+def memory_purge(yes: bool) -> None:
+    """Delete every failure note of the current project."""
+    with ProjectIndex() as index:
+        key = _memory_key(index)
+        count = len(memory_mod.list_notes(index.conn, key))
+        if not count:
+            ui.info("no failure notes for this project")
+            return
+        if not yes and not click.confirm(
+                f"delete {count} note(s) of {key}?", default=False):
+            ui.info("cancelled")
+            return
+        memory_mod.purge(index.conn, key)
+    ui.success(f"deleted {count} note(s) of {key}")
+
+
+# ---------------------------------------------------------------- ghost patch
+_FIX_SYSTEM = (
+    "You write unified diffs for a source tree. Answer with the diff only, "
+    "between ```diff and ```. Paths are relative to the project root. Never "
+    "use an absolute path, never leave the project, and keep the change as "
+    "small as the request allows."
+)
+
+
+@main.command("fix")
+@click.argument("request")
+def fix_cmd(request: str) -> None:
+    """Ask the model for a patch, then stage it for review."""
+    settings = Config()
+    engine = CoreEngine(settings)
+    try:
+        root = engine.index.project_root
+        if not root:
+            ui.error("no project is indexed. Run: nusa-rg index <path>")
+            sys.exit(1)
+        retrieval = retrieve(
+            request, engine.index,
+            limit=int(settings.get("max_context_snippets", 3) or 3),
+            root=root,
+        )
+        context = ""
+        if retrieval.snippets:
+            blocks = []
+            for snippet in retrieval.snippets:
+                blocks.append(f"[{snippet.path} "
+                              f"lines {snippet.start_line}-{snippet.end_line}]\n"
+                              f"```\n{snippet.content.strip()}\n```")
+            context = "\n\n".join(blocks)
+        prompt = (
+            f"{context}\n\nThe request:\n{request}\n\n"
+            "Produce the unified diff that satisfies the request."
+        ) if context else f"The request:\n{request}\n\nProduce the unified diff."
+        client = llm.build_client(settings)
+        with ui.thinking("Asking for a patch"):
+            response = client.generate(prompt, context="", system=_FIX_SYSTEM)
+    except LLMError as exc:
+        ui.error(str(exc))
+        engine.close()
+        sys.exit(1)
+
+    diff = patch_mod.extract_diff(response.text)
+    if not diff.strip():
+        ui.error("the model did not return a diff")
+        engine.close()
+        sys.exit(1)
+    try:
+        patches = patch_mod.parse_diff(diff)
+    except patch_mod.PatchError as exc:
+        ui.error(f"the patch was refused: {exc}")
+        engine.close()
+        sys.exit(1)
+
+    store = patch_mod.PatchStore()
+    key = memory_mod.project_key(root)
+    try:
+        staged = store.create(key, request, diff, patches, root=root)
+    except patch_mod.PatchError as exc:
+        ui.error(str(exc))
+        engine.close()
+        sys.exit(1)
+    engine.close()
+
+    ui.success(f"patch {staged.id} staged")
+    print(f"  {staged.summary()}")
+    for item in staged.files:
+        print(f"  {item.path}  +{item.added} -{item.removed}")
+    ui.info(f"review it:   nusa-rg patch review {staged.id}")
+    ui.info(f"test it:     nusa-rg patch test {staged.id}")
+    ui.info(f"apply it:    nusa-rg patch apply {staged.id}")
+
+
+@main.group()
+def patch() -> None:
+    """Review, test, and apply a staged patch."""
+
+
+def _latest_patch(store: patch_mod.PatchStore, key: str,
+                  patch_id: str) -> patch_mod.Patch:
+    """The named patch, or the newest one when no name is given."""
+    try:
+        if patch_id:
+            return store.load(key, patch_id)
+        found = store.list(key)
+        if not found:
+            raise patch_mod.PatchError("no patch is staged for this project")
+        return found[0]
+    except patch_mod.PatchError as exc:
+        ui.error(str(exc))
+        sys.exit(1)
+
+
+@patch.command("list")
+def patch_list() -> None:
+    """List the patches staged for this project."""
+    with ProjectIndex() as index:
+        key = _memory_key(index)
+    found = patch_mod.PatchStore().list(key)
+    if not found:
+        ui.info("no patch is staged for this project")
+        return
+    ui.heading(f"Staged patches ({len(found)})")
+    for item in found:
+        print(f"  {item.summary()}")
+
+
+@patch.command("review")
+@click.argument("patch_id", required=False)
+def patch_review(patch_id: str) -> None:
+    """Show what a staged patch changes."""
+    with ProjectIndex() as index:
+        key = _memory_key(index)
+    staged = _latest_patch(patch_mod.PatchStore(), key, patch_id)
+    ui.heading(f"Patch {staged.id}")
+    print(f"  request  {staged.request}")
+    print(f"  files    {len(staged.files)}  (+{staged.added} -{staged.removed})")
+    print()
+    print(staged.diff)
+
+
+@patch.command("test")
+@click.argument("patch_id", required=False)
+def patch_test(patch_id: str) -> None:
+    """Run the project tests against the staged patch."""
+    settings = Config()
+    with ProjectIndex() as index:
+        key = _memory_key(index)
+    store = patch_mod.PatchStore()
+    staged = _latest_patch(store, key, patch_id)
+    tree = store.tree(key, staged.id)
+
+    command_line = str(settings.get("patch_test_command", "") or "").strip()
+    if not command_line:
+        ui.info("not run: no test command is configured")
+        ui.info('set one with: nusa-rg config set patch_test_command "pytest -q"')
+        return
+    try:
+        argv = command_mod.split_command(command_line)
+    except CommandError as exc:
+        ui.error(f"could not run the test command: {exc}")
+        sys.exit(1)
+    try:
+        with ui.thinking("Running the tests"):
+            result = command_mod.run(
+                argv,
+                timeout=int(settings.get("command_timeout",
+                                        command_mod.DEFAULT_TIMEOUT)
+                            or command_mod.DEFAULT_TIMEOUT),
+                limit=int(settings.get("command_output_limit",
+                                       command_mod.DEFAULT_LIMIT)
+                          or command_mod.DEFAULT_LIMIT),
+                use_rtk=False,
+                cwd=str(tree),
+            )
+    except CommandError as exc:
+        ui.error(f"could not run the test command: {exc}")
+        sys.exit(1)
+
+    if result.ok:
+        ui.success(f"tests passed: {result.summary()}")
+    else:
+        ui.error(f"tests failed: {result.summary()}")
+        if result.output:
+            print(result.output)
+        sys.exit(1)
+
+
+@patch.command("apply")
+@click.argument("patch_id", required=False)
+@click.option("--yes", is_flag=True, help="Do not ask for confirmation.")
+def patch_apply(patch_id: str, yes: bool) -> None:
+    """Apply a staged patch to the project."""
+    with ProjectIndex() as index:
+        key = _memory_key(index)
+    store = patch_mod.PatchStore()
+    staged = _latest_patch(store, key, patch_id)
+    root = Path(staged.root or "")
+    if not root.is_dir():
+        ui.error("the project this patch belongs to is gone")
+        sys.exit(1)
+    if not yes and not click.confirm(
+            f"apply patch {staged.id} to {root}?", default=False):
+        ui.info("cancelled")
+        return
+    try:
+        written = patch_mod.apply_to_tree(staged.files, root, root)
+    except patch_mod.PatchError as exc:
+        ui.error(f"the patch does not apply any more: {exc}")
+        sys.exit(1)
+    store.set_status(key, staged.id, "applied")
+    ui.success(f"applied patch {staged.id}")
+    for path in written:
+        print(f"  {path}")
+
+
+@patch.command("discard")
+@click.argument("patch_id", required=False)
+def patch_discard(patch_id: str) -> None:
+    """Throw a staged patch away."""
+    with ProjectIndex() as index:
+        key = _memory_key(index)
+    store = patch_mod.PatchStore()
+    staged = _latest_patch(store, key, patch_id)
+    store.discard(key, staged.id)
+    ui.success(f"discarded patch {staged.id}")
+
+
 # ------------------------------------------------------------------- update
 @main.command()
 @click.option("--check", "check_only", is_flag=True,
@@ -1470,6 +1927,11 @@ def status() -> None:
     compress = bool(settings.get("command_compress", True))
     engine_name = "rtk" if command_mod.rtk_usable() else "built-in"
     print(f"  compress  {'on' if compress else 'off'} ({engine_name})")
+    policy = privacy_mod.PrivacyPolicy.from_config(settings)
+    privacy_state = "on" if policy.secret_detection else "off"
+    if policy.local_only:
+        privacy_state += f", {len(policy.local_only)} local-only pattern(s)"
+    print(f"  privacy   {privacy_state}")
     entries = settings.fallback_entries()
     if entries:
         chain = " -> ".join(pid + (f":{model}" if model else "") for pid, model in entries)

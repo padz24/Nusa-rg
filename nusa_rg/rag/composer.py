@@ -4,6 +4,10 @@ Delimited blocks are used rather than free text so the boundary between trusted
 instructions, retrieved project content, and the user's question is explicit.
 Retrieved content is already sanitised at index time; the user question is
 sanitised here as the last hop.
+
+Two more blocks travel with it. The evidence block says what was actually
+read, so the answer can be checked against it, and the memory block carries
+what already failed before, so the same dead end is not walked into twice.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ class ComposedPrompt:
     user: str
     context: str
     used_context: bool
+    evidence: str = ""
 
     def as_messages(self) -> list[dict[str, str]]:
         """Chat-completions payload shared by both the API and local runners."""
@@ -70,6 +75,9 @@ def compose(
     retrieval: RetrievalResult | None = None,
     *,
     command_output: str = "",
+    evidence: str = "",
+    memory: str = "",
+    evidence_instructions: str = "",
     max_context_chars: int = 6000,
     max_command_chars: int = 8000,
 ) -> ComposedPrompt:
@@ -104,6 +112,14 @@ def compose(
             "Use the project excerpts above when they are relevant. "
             "Cite them as [path:line]."
         )
+    if evidence:
+        parts.append(f"{evidence}\n\n{evidence_instructions}".strip())
+    if memory:
+        parts.append(
+            f"{memory}\n\n"
+            "The block above holds what already failed before. Do not repeat a "
+            "dead end without saying why it was different."
+        )
     if clean_command:
         parts.append(
             f"{COMMAND_OPEN}\n{clean_command}\n{COMMAND_CLOSE}\n\n"
@@ -117,4 +133,5 @@ def compose(
         user="\n\n".join(parts),
         context=context,
         used_context=used_context,
+        evidence=evidence,
     )

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 from .. import paths, sanitize
+from .. import symbols as symbols_mod
 from .scanner import ScanResult, ScannedFile, scan
 
 SCHEMA = """
@@ -56,6 +57,55 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     start_line UNINDEXED,
     end_line UNINDEXED,
     tokenize = 'unicode61 remove_diacritics 2'
+);
+
+CREATE TABLE IF NOT EXISTS symbols (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    qualname   TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    path       TEXT NOT NULL,
+    relpath    TEXT NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line   INTEGER NOT NULL,
+    parent     TEXT NOT NULL DEFAULT '',
+    signature  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS symbols_name_idx ON symbols(name);
+
+CREATE TABLE IF NOT EXISTS symbol_refs (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    name    TEXT NOT NULL,
+    path    TEXT NOT NULL,
+    relpath TEXT NOT NULL,
+    line    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS symbol_refs_name_idx ON symbol_refs(name);
+
+CREATE TABLE IF NOT EXISTS memory_notes (
+    id          TEXT PRIMARY KEY,
+    project     TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    summary     TEXT NOT NULL,
+    detail      TEXT NOT NULL DEFAULT '',
+    subject     TEXT NOT NULL DEFAULT '',
+    attempts    INTEGER NOT NULL DEFAULT 1,
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS memory_project_idx ON memory_notes(project);
+
+CREATE TABLE IF NOT EXISTS memory_attempts (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id TEXT NOT NULL,
+    attempt INTEGER NOT NULL,
+    status  TEXT NOT NULL,
+    note    TEXT NOT NULL DEFAULT '',
+    at      REAL NOT NULL
 );
 """
 
@@ -187,6 +237,9 @@ class ProjectIndex:
         self.conn.execute("DELETE FROM chunks_fts WHERE path=?", (path,))
         self.conn.execute("DELETE FROM chunks WHERE path=?", (path,))
         self.conn.execute("DELETE FROM files WHERE path=?", (path,))
+        # The code genome follows the file: a symbol of a file that is gone
+        # must not stay behind.
+        symbols_mod.remove_file_symbols(self.conn, path)
 
     def _index_file(self, entry: ScannedFile, chunk_size: int, overlap: int) -> int:
         mtime = os.path.getmtime(entry.path)
@@ -234,6 +287,13 @@ class ProjectIndex:
             count += 1
 
         self.conn.execute("UPDATE files SET chunks=? WHERE id=?", (count, file_id))
+
+        # The code genome is read from the same text, inside the same
+        # transaction as the chunks of this file.
+        if entry.path.endswith(".py"):
+            found, used = symbols_mod.extract(entry.path, entry.relpath, text)
+            symbols_mod.replace_file_symbols(
+                self.conn, entry.path, entry.relpath, found, used)
         return count
 
     def index(

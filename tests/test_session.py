@@ -467,7 +467,7 @@ class _HistoryClient(LLMClient):
 
 def test_engine_passes_history_to_the_client(monkeypatch):
     client = _HistoryClient()
-    monkeypatch.setattr("nusa_rg.engine.llm.build_client", lambda config: client)
+    monkeypatch.setattr("nusa_rg.engine.llm.build_client", lambda config, **kwargs: client)
 
     CoreEngine().ask("current", skip_retrieval=True, history=HISTORY)
 
@@ -485,7 +485,7 @@ def test_engine_streams_with_history(monkeypatch):
             yield "ok"
 
     client = StreamingHistoryClient()
-    monkeypatch.setattr("nusa_rg.engine.llm.build_client", lambda config: client)
+    monkeypatch.setattr("nusa_rg.engine.llm.build_client", lambda config, **kwargs: client)
 
     CoreEngine().ask("current", skip_retrieval=True, history=HISTORY,
                      on_token=lambda delta: None)

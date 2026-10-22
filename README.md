@@ -101,6 +101,12 @@ nusa-rg chat "explain this traceback"    # one question, then exit
 | `nusa-rg session delete <id> --yes` | Delete a session |
 | `nusa-rg run <cmd>` | Run a command; `--ask "…"` answers with its output as context |
 | `nusa-rg index <path>` | Scan and index a project |
+| `nusa-rg map` | Show the structure of the indexed project |
+| `nusa-rg map --symbol <name>` | Find a symbol and everything that refers to it |
+| `nusa-rg impact <file>` | Show what a change to a file or symbol could touch |
+| `nusa-rg memory list` | The failure notes of the current project |
+| `nusa-rg fix "<request>"` | Ask the model for a patch and stage it for review |
+| `nusa-rg patch review` | Read a staged patch before it is applied |
 | `nusa-rg providers list` | The bundled catalogue of 232 providers |
 | `nusa-rg providers show <id>` | Endpoint, key variable, default model |
 | `nusa-rg providers models <id>` | The models a provider hosts |
@@ -133,6 +139,42 @@ Flags worth knowing: `--project/-p`, `--no-rag`, `--stream`/`--no-stream`,
 The specification asks for retrieval in under two seconds on a 50 MB project
 (AC-03). The retrieval step in the transcript above took 0.01s; the model call
 is what takes time.
+
+## Proof-first answers
+
+Every turn carries an evidence block: what the index actually held, where it
+came from, and how strongly it ranked. The model is told to label every claim
+as `[FACT]` (the evidence shows it), `[INFERENCE]` (a conclusion drawn from the
+evidence) or `[UNKNOWN]` (the evidence does not cover it). When the index holds
+nothing about the question, the block says so instead of staying silent, and
+the answer is expected to be `[UNKNOWN]`.
+
+````
+<|RAG_EVIDENCE|>
+[FACT] src/auth.py:12-18 confidence=0.82 symbol=verify_password
+```
+    def verify_password(password: str, salt: bytes, digest: bytes) -> bool:
+        """Constant-time password check."""
+        return hmac.compare_digest(hash_password(password, salt), digest)
+<|/RAG_EVIDENCE|>
+````
+
+## The code genome
+
+The chunk index answers "which text looks like the question". The code genome
+answers the harder question: "which function is that, and what else touches
+it". Python files are read with `ast`, so nothing in the project is executed.
+
+```bash
+nusa-rg map                            # the structure of the indexed project
+nusa-rg map --symbol verify_password   # where it is defined, who refers to it
+nusa-rg impact src/auth.py             # what a change there could touch
+```
+
+`impact` names the files that refer to the symbols of a file, and the test
+files among them, with the line numbers as the evidence. Symbols are stored
+next to the chunks and replaced per file inside the same transaction, so a
+symbol never outlives the code it describes.
 
 ## Sessions
 
@@ -369,6 +411,11 @@ command_timeout: 120
 command_output_limit: 40000
 command_use_rtk: true
 command_compress: true         # shorten output with the built-in rules when rtk is not used
+privacy_secret_detection: true  # look for credentials before anything is sent
+privacy_redact_secrets: true    # replace a credential with a mask
+privacy_local_only: []          # glob patterns that never leave the device
+privacy_confirm_sensitive_context: true  # ask before a redacted context is sent
+patch_test_command: ''         # command `nusa-rg patch test` runs on a staged patch
 update_remote: ''               # empty keeps the GitHub-only update guard
 log_level: INFO
 system_prompt: 'You are a concise programming assistant embedded in a Termux terminal...'
@@ -389,6 +436,72 @@ nusa-rg config set update_remote ~/RAG-termux-cli.git
 That setting is the authorisation. Leaving it empty keeps the guard in place,
 so a stray `origin` cannot satisfy it on its own. If the remote has no release
 tags, the update compares the remote branch commit with the local `HEAD`.
+
+## The privacy firewall
+
+Project content is the user's code, and it does not leave the device unless it
+has to. Before anything is sent, the firewall looks at it.
+
+- A file whose name matches `privacy_local_only` is dropped from the context
+  when the provider is external. The local model still gets it.
+- A credential in the context is replaced with `***MASKED***`. With
+  `privacy_redact_secrets off` the request is refused instead.
+- With `privacy_confirm_sensitive_context on` an interactive session asks
+  before a context that held a secret is sent on.
+- The check runs before every provider, the fallbacks included, and a request
+  that is refused never leaves the machine.
+
+```bash
+nusa-rg config set privacy_local_only ".env,private/**,secrets/**"
+nusa-rg config set privacy_redact_secrets off     # refuse instead of masking
+nusa-rg config set privacy_confirm_sensitive_context off
+```
+
+`status` shows the state of the firewall.
+
+## The failure memory
+
+A command that fails, or a provider that errors out, is written down. The next
+time the same failure shows up, the note comes back with the prompt, so the
+assistant does not walk into the same dead end twice.
+
+```bash
+nusa-rg memory list
+nusa-rg memory search "authentication failure"
+nusa-rg memory show <id>
+nusa-rg memory delete <id>
+nusa-rg memory purge            # every note of this project
+```
+
+A note is identified by the fingerprint of the error: numbers, paths,
+timestamps and identifiers are normalised away, so the same failure in two
+places is one note. Notes are scoped to the project, the project is named by
+a digest rather than by its path, and nothing secret goes into a note.
+
+## Ghost patch
+
+`nusa-rg fix` asks the model for a unified diff and stages it. The project
+itself is not touched: the patch is applied to a copy under
+`~/.nusa-rg/patches`, where it can be read and tested.
+
+```bash
+nusa-rg fix "perbaiki validasi password"
+nusa-rg patch list
+nusa-rg patch review             # read the diff
+nusa-rg patch test               # run the tests against the staged copy
+nusa-rg patch apply              # write it to the project, after a confirmation
+nusa-rg patch discard            # throw it away
+```
+
+Every path in the diff is checked before it is used: it must be relative, it
+must stay inside the project, and it must not reach out through a symbolic
+link. The hunks are checked against the file they claim to change, so a patch
+that no longer applies is refused instead of writing something half-right.
+The test command comes from the configuration:
+
+```bash
+nusa-rg config set patch_test_command "pytest -q"
+```
 
 ## Updating
 
@@ -442,6 +555,7 @@ State lives in one directory:
 ├── catalog.json       # optional: `providers refresh` snapshot (0600)
 ├── sessions/          # saved conversations
 ├── logos/             # provider SVGs from models.dev
+├── patches/           # staged patches and their copy of the project
 └── logs/
     ├── app.log        # operational log, 10 MB x 5 rotations
     └── audit.log      # config changes and index operations
@@ -511,7 +625,7 @@ the resulting text as labelled, sanitised context.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 628 tests
+pytest                    # 688 tests
 python -m nusa_rg         # run without installing
 ```
 
@@ -535,6 +649,7 @@ llama.cpp path runs against a stub executable.
 | Command output truncated | Raise `command_output_limit`, or let rtk trim it first |
 | Answers cost more than they should | `nusa-rg config set response_style caveman`, and install rtk |
 | The answer came from another provider | `status` prints the fallback chain, and the turn names the provider that answered |
+| The context was refused | The privacy firewall found something it would not send; check `privacy_local_only` and the file it names |
 
 ## License
 

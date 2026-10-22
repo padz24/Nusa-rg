@@ -181,6 +181,39 @@ per million tokens when the catalogue knows them.
 Fetch a fresh catalogue (default: the models.dev registry) into the state
 directory, replacing the bundled snapshot.
 .TP
+.B map [\fB\-\-symbol\fR \fINAME\fR]
+Show the structure of the indexed project: how many files and symbols it
+holds, and which files define the most. With
+.B \-\-symbol
+one symbol is looked up, with the places that refer to it.
+.TP
+.B impact \fIPATH\fR
+Show what a change to a file or a symbol could touch: the files that refer to
+it, and the test files among them, with line numbers as the evidence.
+.TP
+.B memory list|search|show|delete|purge
+Manage the failure notes of the current project. A note is written when a
+command fails or a provider errors out, so the same dead end is not walked
+into twice. Notes are scoped to the project and never hold a secret.
+.TP
+.B fix \fIREQUEST\fR
+Ask the model for a unified diff and stage it. The project is not touched:
+the patch is applied to a copy under
+.IR ~/.nusa\-rg/patches ,
+where it can be read and tested.
+.TP
+.B patch list|review|test|apply|discard
+Manage the staged patches:
+.B review
+reads the diff,
+.B test
+runs the configured test command against the staged copy,
+.B apply
+writes it to the project after a confirmation, and
+.B discard
+throws it away. Paths in a diff are checked before use: they must be relative,
+stay inside the project, and not reach through a symbolic link.
+.TP
 .B update [\fB\-\-check\fR] [\fB\-\-force\fR] [\fB\-\-no\-install\fR] [\fB\-\-yes\fR]
 Update a source checkout to the latest release and re\-run the installer.
 Config, credentials and the index in ~/.nusa\-rg are never touched.

@@ -102,6 +102,12 @@ nusa-rg chat "explain this traceback"    # satu pertanyaan, lalu keluar
 | `nusa-rg session delete <id> --yes` | Menghapus sesi |
 | `nusa-rg run <cmd>` | Menjalankan perintah; `--ask "…"` menjawab memakai keluarannya sebagai konteks |
 | `nusa-rg index <path>` | Memindai dan mengindeks sebuah proyek |
+| `nusa-rg map` | Menampilkan struktur proyek yang terindeks |
+| `nusa-rg map --symbol <nama>` | Mencari sebuah simbol dan semua yang merujuknya |
+| `nusa-rg impact <berkas>` | Menampilkan apa yang bisa tersentuh perubahan pada sebuah berkas atau simbol |
+| `nusa-rg memory list` | Catatan kegagalan milik proyek yang sedang dikerjakan |
+| `nusa-rg fix "<permintaan>"` | Meminta patch ke model lalu ereanya untuk ditinjau |
+| `nusa-rg patch review` | Membaca patch yang sudah dierea sebelum diterapkan |
 | `nusa-rg providers list` | Katalog bawaan berisi 232 provider |
 | `nusa-rg providers show <id>` | Endpoint, variabel kunci, model bawaan |
 | `nusa-rg providers models <id>` | Model yang tersedia di sebuah provider |
@@ -136,6 +142,110 @@ Flag yang perlu diketahui: `--project/-p`, `--no-rag`, `--stream`/`--no-stream`,
 Spesifikasi menuntut retrieval di bawah dua detik untuk proyek 50 MB
 (AC-03). Langkah retrieval pada transkrip di atas memakan 0,01 detik; yang
 memakan waktu adalah panggilan ke model.
+
+## Jawaban berbasis bukti
+
+Setiap giliran membawa blok bukti: apa yang benar-benar ada di indeks, dari
+mana asalnya, dan seberapa kuat peringkatnya. Model diminta melabeli setiap
+klaim dengan `[FACT]` (bukti itu menunjukkannya), `[INFERENCE]` (kesimpulan
+yang ditarik dari bukti), atau `[UNKNOWN]` (bukti tidak menakupnya). Kalau
+indeks tidak menyimpan apa pun tentang pertanyaannya, blok itu mengatakannya,
+dan jawabannya diharapkan `[UNKNOWN]`.
+
+````
+<|RAG_EVIDENCE|>
+[FACT] src/auth.py:12-18 confidence=0.82 symbol=verify_password
+```
+    def verify_password(password: str, salt: bytes, digest: bytes) -> bool:
+        """Constant-time password check."""
+        return hmac.compare_digest(hash_password(password, salt), digest)
+<|/RAG_EVIDENCE|>
+````
+
+## Peta kode
+
+Indeks potongan menjawab "teks mana yang mirip dengan pertanyaannya". Peta
+kode menjawab pertanyaan yang lebih sulit: "fungsi itu yang mana, dan apa lagi
+yang menyentuhnya". Berkas Python dibaca dengan `ast`, jadi tidak ada kode
+proyek yang dieksekusi.
+
+```bash
+nusa-rg map                            # struktur proyek yang terindeks
+nusa-rg map --symbol verify_password   # di mana didefinisikan, siapa yang memakainya
+nusa-rg impact src/auth.py             # apa yang bisa tersentuh perubahan di sana
+```
+
+`impact` menyebut berkas-berkas yang merujuk simbol-simbol sebuah berkas,
+termasuk berkas tes di antaranya, dengan nomor baris sebagai buktinya.
+Simbol disimpan di sebelah potongan dan diganti per berkas dalam transaksi yang
+sama, sehingga sebuah simbol tidak pernah lebih lama dari kode yang
+menggambarkannya.
+
+## Dinding privasi
+
+Konten proyek adalah kode pengguna, dan kode itu tidak meninggalkan perangkat
+kecuali memang harus. Sebelum apa pun dikirim, dinding privasi memeriksanya.
+
+- Berkas yang namanya cocok dengan `privacy_local_only` dibuang dari konteks
+  ketika providernya eksternal. Model lokal tetap menerimanya.
+- Kredensial di konteks diganti `***MASKED***`. Dengan
+  `privacy_redact_secrets off` permintaannya ditolak, bukan disamarkan.
+- Dengan `privacy_confirm_sensitive_context on`, sesi interaktif menanyakan
+  dulu sebelum konteks yang memuat rahasia dikirim.
+- Pemeriksaan ini berjalan sebelum setiap provider, termasuk fallback, dan
+  permintaan yang ditolak tidak pernah meninggalkan mesin.
+
+```bash
+nusa-rg config set privacy_local_only ".env,private/**,secrets/**"
+nusa-rg config set privacy_redact_secrets off     # tolak, jangan samarkan
+nusa-rg config set privacy_confirm_sensitive_context off
+```
+
+`status` menampilkan keadaan dinding privasi.
+
+## Ingatan kegagalan
+
+Perintah yang gagal, atau provider yang error, dicatat. Ketika kegagalan
+yang sama muncul lagi, catatnya ikut ke dalam prompt, sehingga asisten tidak
+mengulang jalan buntu yang sama.
+
+```bash
+nusa-rg memory list
+nusa-rg memory search "authentication failure"
+nusa-rg memory show <id>
+nusa-rg memory delete <id>
+nusa-rg memory purge            # semua catatan proyek ini
+```
+
+Catatan diidentifikasi lewat sidik jari error-nya: angka, path, stempel waktu,
+dan identifier dinormalkan, sehingga kegagalan yang sama di dua tempat
+menjadi satu catatan. Catatan terikat pada proyek, proyeknya disebut lewat
+digest bukan path, dan tidak ada rahasia yang masuk ke catatan.
+
+## Ghost patch
+
+`nusa-rg fix` meminta unified diff ke model lalu ereanya. Proyeknya sendiri
+tidak disentuh: patch diterapkan ke salinan di `~/.nusa-rg/patches`, tempat
+ia bisa dibaca dan diuji.
+
+```bash
+nusa-rg fix "perbaiki validasi password"
+nusa-rg patch list
+nusa-rg patch review             # baca diff-nya
+nusa-rg patch test               # jalankan tes pada salinan
+nusa-rg patch apply              # tulis ke proyek, setelah konfirmasi
+nusa-rg patch discard            # buang
+```
+
+Setiap path di dalam diff diperiksa sebelum dipakai: harus relatif, harus
+tetap di dalam proyek, dan tidak boleh menembus symlink. Potongan diffnya
+dicocokkan dengan berkas yang diklaimnya, sehingga patch yang sudah tidak
+cocok ditolak, bukan menulis sesuatu yang setengah benar. Perintah tesnya
+berasal dari konfigurasi:
+
+```bash
+nusa-rg config set patch_test_command "pytest -q"
+```
 
 ## Sesi percakapan
 
@@ -379,6 +489,11 @@ command_timeout: 120
 command_output_limit: 40000
 command_use_rtk: true
 command_compress: true         # pendekkan keluaran dengan aturan bawaan saat rtk tidak dipakai
+privacy_secret_detection: true  # cari kredensial sebelum apa pun dikirim
+privacy_redact_secrets: true    # ganti kredensial dengan mask
+privacy_local_only: []          # pola glob yang tidak pernah meninggalkan perangkat
+privacy_confirm_sensitive_context: true  # tanya dulu sebelum konteks tersamarkan dikirim
+patch_test_command: ''         # perintah yang dijalankan `nusa-rg patch test` pada patch terea
 update_remote: ''               # kosong mempertahankan penjaga update khusus GitHub
 log_level: INFO
 system_prompt: 'You are a concise programming assistant embedded in a Termux terminal...'
@@ -455,6 +570,7 @@ Semua state tinggal di satu direktori:
 ├── catalog.json       # opsional: cuplikan `providers refresh` (0600)
 ├── sessions/          # percakapan tersimpan
 ├── logos/             # SVG provider dari models.dev
+├── patches/           # patch yang dierea beserta salinan proyeknya
 └── logs/
     ├── app.log        # log operasional, rotasi 10 MB x 5
     └── audit.log      # perubahan konfigurasi dan operasi indeks
@@ -526,7 +642,7 @@ dan sudah disanitasi.
 
 ```bash
 pip install -e '.[dev]'
-pytest                    # 628 tes
+pytest                    # 688 tes
 python -m nusa_rg         # jalan tanpa memasang
 ```
 
@@ -550,6 +666,7 @@ disimulasikan dan jalur llama.cpp diuji dengan executable palsu.
 | Keluaran perintah terpotong | Naikkan `command_output_limit`, atau biarkan rtk memotong lebih dulu |
 | Jawaban terlalu mahal | `nusa-rg config set response_style caveman`, dan pasang rtk |
 | Jawaban datang dari provider lain | `status` mencetak rantai fallback, dan giliran itu menyebut provider yang menjawab |
+| Konteksnya ditolak | Dinding privasi menemukan sesuatu yang tidak mau dikirim; periksa `privacy_local_only` dan berkas yang disebutnya |
 
 ## Lisensi
 

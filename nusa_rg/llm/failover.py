@@ -18,10 +18,14 @@ class FailoverClient(LLMClient):
 
     name = "failover"
 
-    def __init__(self, clients: list[tuple[str, LLMClient]]):
+    def __init__(self, clients: list[tuple[str, LLMClient]], *,
+                 gate: Callable[[str, str], str | None] | None = None):
         if not clients:
             raise LLMError("a failover chain needs at least one client")
         self.clients = clients
+        #: Called before every attempt with ``(prompt, provider label)``. It
+        #: returns the text to send, or None to refuse that provider.
+        self.gate = gate
 
     @property
     def labels(self) -> list[str]:
@@ -31,6 +35,12 @@ class FailoverClient(LLMClient):
     def _streams(client: LLMClient) -> bool:
         supports = getattr(client, "supports_stream", None)
         return bool(supports and supports())
+
+    def _gated(self, prompt: str, label: str) -> str | None:
+        """The text to send to one provider, or None when it is refused."""
+        if self.gate is None:
+            return prompt
+        return self.gate(prompt, label)
 
     def generate(
         self,
@@ -46,8 +56,12 @@ class FailoverClient(LLMClient):
         if history:
             options["history"] = history
         for position, (label, client) in enumerate(self.clients):
+            gated = self._gated(prompt, label)
+            if gated is None:
+                failures.append((label, LLMError("the privacy firewall refused it")))
+                continue
             try:
-                response = client.generate(prompt, **options)
+                response = client.generate(gated, **options)
             except LLMError as exc:
                 failures.append((label, exc))
                 continue
@@ -85,10 +99,14 @@ class FailoverClient(LLMClient):
         for label, client in self.clients:
             if not self._streams(client):
                 continue
+            gated = self._gated(prompt, label)
+            if gated is None:
+                failures.append((label, LLMError("the privacy firewall refused it")))
+                continue
             started = False
             reported: list[Usage] = []
             try:
-                for delta in client.iter_stream(prompt, on_usage=reported.append,
+                for delta in client.iter_stream(gated, on_usage=reported.append,
                                                 **options):
                     started = True
                     yield delta
